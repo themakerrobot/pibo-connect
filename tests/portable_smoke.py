@@ -123,13 +123,18 @@ def main() -> int:
         return 0
 
     log = Path(tempfile.gettempdir())
-    print("\n1) python\\python.exe -m pibo_connector")
-    _, f1 = serve(["python\\python.exe", "-m", "pibo_connector", "--no-browser"],
+    # 실행 파일은 **절대경로**로 준다. 윈도우의 CreateProcess 는 상대 실행 파일을
+    # Popen 의 cwd= 가 아니라 이 프로세스의 현재 폴더 기준으로 찾는다 — 상대경로로
+    # 주면 WinError 2 다. 묶음 안의 파이썬을 쓰는지는 경로 자체가 보증한다.
+    py = root / "python" / "python.exe"
+    print(f"\n1) {py} -m pibo_connector")
+    _, f1 = serve([str(py), "-m", "pibo_connector", "--no-browser"],
                   root, log / "portable_py.log", args.timeout, "python.exe")
     fails += f1
 
     print("\n2) 시작하기.bat")
-    info, f2 = serve(["cmd", "/c", "시작하기.bat", "--no-browser"],
+    # .bat 은 스스로 cd /d "%~dp0" 하므로 cwd 와 무관하지만, 찾는 쪽도 절대경로로.
+    info, f2 = serve(["cmd", "/c", str(root / "시작하기.bat"), "--no-browser"],
                      root, log / "portable_bat.log", args.timeout, "시작하기.bat")
     fails += f2
     if info:
