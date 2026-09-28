@@ -23,9 +23,8 @@ Python Software Foundation 이름으로 Authenticode 서명이 되어 있다.
 바꾼 것**이다 — Authenticode 서명은 파일 내용에 붙고 파일 이름과 무관하므로
 복사·개명해도 PSF 서명이 그대로 유효하다. 두 번 누르면 파이썬이 대화형으로
 뜨고, app/sitecustomize.py 가 site 초기화 때 자동으로 import 되어 커넥터를
-띄운다. 무엇을 할지는 실행 파일 이름으로 가른다 ('확인' 이 들어 있으면
---check). 결과적으로 묶음 안에서 실행되는 PE 는 전부 PSF 가 서명한 것이고,
-우리 것은 .py 텍스트뿐이다.
+띄운다. 결과적으로 묶음 안에서 실행되는 PE 는 PSF 가 서명한 것이고, 우리
+것은 .py 텍스트뿐이다. 이 묶음은 실기에서 차단 없이 켜졌다.
 
 그 전제가 진짜인지는 추측하지 않는다. `verify_signature()` 가 세 번 본다.
   1. PE 의 Certificate Table 에 PKCS#7 서명 blob 이 있나  (어디서든)
@@ -39,12 +38,11 @@ Python Software Foundation 이름으로 Authenticode 서명이 되어 있다.
 묶음 구조 (zip 안)
 ------------------
     pibo-connect/
-      1. 파이보 커넥터 시작.exe   ← python.exe 복사본 (PSF 서명). 이걸 누른다
-      2. 로봇 확인하기.exe        ← 같은 복사본. 안 찾아질 때 --check
-      먼저-읽어보세요.txt
+      pibo-connect.exe            ← python.exe 복사본 (PSF 서명). 이걸 누른다
       python311.dll  python3.dll  vcruntime140*.dll   ← 옮길 수 없는 것들
       python311._pth              ← sys.path 를 app 아래로 고정
       app/
+        README.txt                ← 선생님용 안내
         runtime/                  ← python311.zip, *.pyd, libssl-3 …
         sitecustomize.py          ← 두 번 눌렀을 때 커넥터를 띄우는 곳
         pibo_connector/           ← static/ 포함
@@ -52,15 +50,21 @@ Python Software Foundation 이름으로 Authenticode 서명이 되어 있다.
         lib/                      ← 의존성 (pip --target)
       data/                       ← 찾은 로봇 목록 (처음 켤 때)
 
-선생님 눈에는 런처 둘과 읽을거리만 보여야 한다. 그래서 embeddable 을 app/runtime
+풀었을 때 눌러야 할 것이 하나만 보여야 한다. 그래서 embeddable 을 app/runtime
 으로 넣고, 옮길 수 없는 것만 루트에 남긴다 — python3*.dll 은 실행 파일의 import
 table 이 이름으로 옆에서 찾고, vcruntime*.dll 은 그 DLL 이 쓴다. python311.zip 과
 .pyd 는 ._pth 로 자리를 알려주면 되고, .pyd 에 딸린 DLL(libssl-3, libcrypto-3,
 libffi-8, sqlite3)은 확장 모듈이 LOAD_WITH_ALTERED_SEARCH_PATH 로 불리는 덕에
 그 .pyd 와 같은 폴더에서 찾아진다. tests/portable_smoke.py 가 실제로 켜 본다.
 
-.bat 은 묶음에 하나도 없다. SAC 가 막는 종류를 아예 두지 않는다. 옵션을 주려면
-검은 창에서 "1. 파이보 커넥터 시작.exe" -m pibo_connector --host 0.0.0.0 처럼 쓴다.
+**파일 이름은 전부 ASCII 다.** 탐색기의 zip 풀기가 한글 이름을 제대로 못 살리는
+경우가 있다 (실기에서 이상하게 보였다). 한글은 파일 안에만 있다.
+
+.bat 은 묶음에 하나도 없다. SAC 가 막는 종류를 아예 두지 않는다. 옵션이나
+--check 가 필요하면 검은 창에서
+    pibo-connect.exe -m pibo_connector --check 192.168.0.51
+    pibo-connect.exe -m pibo_connector --host 0.0.0.0
+처럼 쓴다. 인자를 주면 sitecustomize 의 자동 시작은 빠진다.
 
 경로 대응은 소스 실행(frozen=False) 과 같다:
     app/pibo_connector/static  = config.static_dir()
@@ -107,11 +111,10 @@ LIB_DIR = "lib"                  # app/lib — 의존성
 ROOT_KEEP = ("python3*.dll", "vcruntime*.dll")
 
 # 켜는 버튼. python.exe 를 복사해 이 이름으로 둔다 (서명은 이름과 무관하다).
-# 앞에 번호를 붙이는 건 탐색기에서 맨 위에 오게 하려는 것이다.
-# sitecustomize.CHECK_MARK('확인') 가 두 번째를 --check 로 가른다.
-LAUNCH_RUN = "1. 파이보 커넥터 시작.exe"
-LAUNCH_CHECK = "2. 로봇 확인하기.exe"
-LAUNCHERS = (LAUNCH_RUN, LAUNCH_CHECK)
+# 묶음 안의 파일 이름은 전부 ASCII 로 맞춘다 — 탐색기의 zip 풀기가 한글 이름을
+# 제대로 못 살리는 경우가 있고, 실기에서 실제로 이상하게 보였다.
+LAUNCHER = "pibo-connect.exe"
+README_NAME = "README.txt"
 
 # ._pth — 실행 파일이 있는 폴더(= 묶음 루트) 기준 상대경로다.
 # 'import site' 를 넣어야 app/sitecustomize.py 가 불리고, lib 의 .pth 처리와
@@ -138,7 +141,7 @@ README_TXT = """파이보 커넥터 — 풀어서 쓰는 묶음 (버전 {ver})
 
   1. 받은 zip 파일을 오른쪽 클릭 - [압축 풀기] 를 누르세요.
      (zip 안에서 바로 두 번 누르면 안 켜져요. 꼭 풀어서 쓰세요.)
-  2. 풀린 폴더에서 [{run}] 를 두 번 누르세요. 맨 위에 있어요.
+  2. 풀린 폴더에서 [{run}] 를 두 번 누르세요.
   3. 검은 창이 하나 뜨고, 잠시 뒤 브라우저가 열려요.
      검은 창은 닫지 마세요 - 닫으면 꺼져요.
   4. 로봇과 노트북이 같은 와이파이에 있는지 확인하고 [로봇 찾기] 를 누르세요.
@@ -146,18 +149,10 @@ README_TXT = """파이보 커넥터 — 풀어서 쓰는 묶음 (버전 {ver})
   끝낼 때는 검은 창을 닫으면 돼요.
 
 
-■ 로봇이 안 찾아질 때
-
-  [{check}] 를 두 번 누르고, 로봇의 IP 주소를 넣으세요.
-  어디서 막혔는지 한 줄씩 알려줘요. 그 내용을 그대로 보내주시면 돼요.
-
-
 ■ 폴더 안에 있는 것
 
   {run}
       켜는 버튼이에요. 이것만 누르면 돼요.
-  {check}
-      로봇 한 대를 짚어 보는 버튼이에요.
   data\\
       찾은 로봇 목록이에요 (처음 켤 때 생겨요).
   app\\  그리고 이름이 어려운 파일들
@@ -177,8 +172,30 @@ README_TXT = """파이보 커넥터 — 풀어서 쓰는 묶음 (버전 {ver})
   맨 아래 [차단 해제] 를 체크하고 확인을 누른 다음에 압축을 푸세요.
   그리고 어떤 파일 이름이 창에 나왔는지 알려주세요.
 
+
+■ 로봇이 안 찾아질 때
+
+  로봇이 켜져 있고 노트북과 같은 와이파이인지 보세요.
+  5초쯤 기다렸다 [로봇 찾기] 를 한 번 더 누르세요.
+
+  그래도 안 되면 어디서 막혔는지 짚어 볼 수 있어요.
+  이 폴더에서 주소창에 cmd 를 치고 엔터를 누른 다음, 아래를 그대로 쓰세요.
+  (192.168.0.51 자리에 로봇 주소를 넣어요)
+
+      {run} -m pibo_connector --check 192.168.0.51
+
+  한 줄씩 어디까지 됐는지 알려줘요. 그 내용을 그대로 보내주시면 돼요.
+
+
+■ 다른 기기에서도 열고 싶을 때
+
+      {run} -m pibo_connector --host 0.0.0.0
+
+  같은 와이파이의 다른 노트북·태블릿에서도 열려요. 검은 창에 주소와 함께
+  암호(토큰)가 같이 나오는데, 그 주소를 통째로 넣어야 열려요.
+
 만든 곳: Circulus
-""".format(ver=__version__, run=LAUNCH_RUN, check=LAUNCH_CHECK)
+""".format(ver=__version__, run=LAUNCHER)
 
 
 # ── 서명 확인 ──────────────────────────────────────────────
@@ -319,8 +336,6 @@ def copy_app(app: Path) -> None:
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
     shutil.copytree(ROOT / "pibo_connector", app / "pibo_connector", ignore=ignore)
     shutil.copytree(ROOT / "examples", app / "examples", ignore=ignore)
-    for f in ("README.md", "CHANGELOG.md"):
-        shutil.copy2(ROOT / f, app / f)
     # 두 번 눌렀을 때 커넥터를 띄우는 곳. app/ 이 sys.path 에 있으므로
     # site 초기화가 자동으로 import 한다. 이게 빠지면 대화형 파이썬만 뜬다.
     shutil.copy2(ROOT / "build" / "sitecustomize.py", app / "sitecustomize.py")
@@ -407,18 +422,23 @@ def build_tree(dest: Path, cache: Path) -> Path:
     # 켜는 버튼. python.exe 를 복사해 이름만 바꾼다 — Authenticode 서명은
     # 파일 내용에 붙으므로 이름을 바꿔도 PSF 서명이 그대로 유효하다.
     # 복사본도 다시 확인한다. 복사 과정에서 잘리면 서명이 깨진다.
-    for name in LAUNCHERS:
-        shutil.copy2(exe, root / name)
-        ok, blob, detail = pe_cert_blob(root / name)
-        if not (ok and blob_names_signer(blob)):
-            raise SystemExit(f"!! 복사한 런처의 서명이 깨졌다: {name} — {detail}")
+    shutil.copy2(exe, root / LAUNCHER)
+    ok, blob, detail = pe_cert_blob(root / LAUNCHER)
+    if not (ok and blob_names_signer(blob)):
+        raise SystemExit(f"!! 복사한 런처의 서명이 깨졌다: {LAUNCHER} — {detail}")
     # 원본 python.exe/pythonw.exe 는 남기지 않는다. 옮긴 자리에서는 옆에
-    # python311.dll 이 없어 어차피 안 돌고, 폴더만 어지럽힌다.
+    # python311.dll 이 없어 어차피 안 돌고, 무엇을 눌러야 할지 헷갈리게만 한다.
     for name in ("python.exe", "pythonw.exe"):
         (runtime / name).unlink(missing_ok=True)
-    print(f"  런처      : {', '.join(LAUNCHERS)}  (서명 그대로)")
+    print(f"  런처      : {LAUNCHER}  (서명 그대로)")
 
-    write_text(root / "먼저-읽어보세요.txt", README_TXT, bom=True)
+    write_text(app / README_NAME, README_TXT, bom=True)
+
+    # 탐색기의 zip 풀기가 한글 이름을 못 살리는 경우가 있다. 이름은 전부 ASCII 다.
+    bad = [str(f.relative_to(root)) for f in root.rglob("*")
+           if not str(f.relative_to(root)).isascii()]
+    if bad:
+        raise SystemExit(f"!! 묶음에 ASCII 아닌 파일 이름이 있다: {bad[:5]}")
     return root
 
 

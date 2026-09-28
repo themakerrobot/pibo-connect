@@ -22,7 +22,7 @@
 
 | 노트북 | 파일 | |
 |---|---|---|
-| **Windows** | **`pibo-connect-windows-portable.zip`** | 교실 배포용. 압축을 풀고 `1. 파이보 커넥터 시작` 을 두 번 누른다 |
+| **Windows** | **`pibo-connect-windows-portable.zip`** | 교실 배포용. 압축을 풀고 `pibo-connect.exe` 를 두 번 누른다 |
 | Windows | `pibo-connect-windows.exe` | 파일 하나. PC 에 따라 스마트 앱 컨트롤이 막는다 |
 | Linux | `pibo-connect-linux` | `chmod +x` 후 실행 |
 | macOS | `pibo-connect-macos` | `chmod +x`, 첫 실행은 우클릭 → 열기 |
@@ -34,26 +34,27 @@
 
 ```
 pibo-connect/
-  1. 파이보 커넥터 시작.exe   python.exe 복사본 (PSF 서명). 이걸 누른다
-  2. 로봇 확인하기.exe        안 찾아질 때 --check
-  먼저-읽어보세요.txt
+  pibo-connect.exe            python.exe 복사본 (PSF 서명). 이걸 누른다
   python311.dll  python3.dll  vcruntime140*.dll   옮길 수 없는 것들 (아래)
   python311._pth              sys.path 를 app 아래로 고정
   app/
+    README.txt                선생님용 안내
     runtime/                  python311.zip · *.pyd · libssl-3 · sqlite3 …
     sitecustomize.py          두 번 눌렀을 때 커넥터를 띄우는 곳
     pibo_connector/  examples/  lib/
   data/                       찾은 로봇 목록 (처음 켤 때 생긴다)
 ```
 
+**파일 이름은 전부 ASCII 다.** 탐색기의 zip 풀기가 한글 이름을 제대로 못 살리는
+경우가 있다 — 실기에서 이상하게 보였다. 한글은 파일 안에만 있다.
+
 **켜는 버튼이 `.bat` 이 아니라 `.exe` 인 이유**: 처음엔 `시작하기.bat` 으로 냈는데
 실기에서 SAC 가 그것도 막았다. SAC 는 서명 없는 프로그램만이 아니라 **출처 불명
 스크립트(`.bat` 포함)** 도 막는다. 그래서 스크립트를 아예 쓰지 않는다 — 켜는 버튼은
 `python.exe` 를 복사해 이름만 바꾼 것이고(Authenticode 서명은 파일 내용에 붙으므로
 개명해도 PSF 서명이 유효하다), 두 번 누르면 `app/sitecustomize.py` 가 `site` 초기화
-때 자동으로 import 되어 커넥터를 띄운다. 무엇을 할지는 실행 파일 이름으로 가른다
-(`확인` 이 들어 있으면 `--check`). 결과적으로 묶음 안에서 실행되는 PE 는 전부 PSF 가
-서명한 것이고, 우리 것은 `.py` 텍스트뿐이다.
+때 자동으로 import 되어 커넥터를 띄운다. 결과적으로 묶음 안에서 실행되는 PE 는 PSF 가
+서명한 것이고, 우리 것은 `.py` 텍스트뿐이다. **이 묶음은 실기에서 차단 없이 켜졌다.**
 
 **루트에 무엇이 남는가**: 선생님 눈에는 런처 둘과 읽을거리만 보여야 하므로
 embeddable 은 `app/runtime` 으로 넣는다. 다만 `python3*.dll` 과 `vcruntime*.dll` 은
@@ -61,12 +62,17 @@ embeddable 은 `app/runtime` 으로 넣는다. 다만 `python3*.dll` 과 `vcrunt
 "python311.dll 을 찾을 수 없습니다" 로 안 켜진다. `python311.zip` 과 `.pyd` 는
 `._pth` 로 자리를 알려주면 되고, `.pyd` 에 딸린 DLL(`libssl-3`, `libcrypto-3`,
 `libffi-8`, `sqlite3`)은 확장 모듈이 `LOAD_WITH_ALTERED_SEARCH_PATH` 로 불리는 덕에
-그 `.pyd` 와 같은 폴더에서 찾아진다. 루트 항목은 9개, 그중 실행 파일은 런처 둘뿐이고
-`tests/portable_smoke.py` 가 그 둘만 있는지 확인한다.
+그 `.pyd` 와 같은 폴더에서 찾아진다. 루트 항목은 7개, 그중 실행 파일은 런처 하나뿐이고
+`tests/portable_smoke.py` 가 그것만 있는지 확인한다.
 
-**묶음에는 `.bat` 이 하나도 없다.** SAC 가 막는 종류를 아예 두지 않는다. 옵션을
-주려면 검은 창에서 `"1. 파이보 커넥터 시작.exe" -m pibo_connector --host 0.0.0.0`
-처럼 쓴다 (인자를 주면 `sitecustomize` 의 자동 시작은 빠진다).
+**묶음에는 `.bat` 이 하나도 없다.** SAC 가 막는 종류를 아예 두지 않는다. `--check`
+나 옵션이 필요하면 검은 창에서 쓴다 (인자를 주면 `sitecustomize` 의 자동 시작은
+빠진다):
+
+```
+pibo-connect.exe -m pibo_connector --check 192.168.0.51
+pibo-connect.exe -m pibo_connector --host 0.0.0.0
+```
 
 다음 버전으로 올릴 때 `data/` 만 남기고 덮어쓰면 로봇 목록이 남는다
 (`sitecustomize.py` 가 `PIBO_CONNECT_DATA` 를 실행 파일 옆 `data\` 로 준다).

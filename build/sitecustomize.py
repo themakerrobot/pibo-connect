@@ -20,15 +20,14 @@ PIBO_CONNECT_NO_AUTOSTART=1 이면 언제나 빠진다.
 
 무엇을 하나
 -----------
-실행 파일 이름으로 고른다. '확인' 이 들어 있으면 로봇 한 대를 짚어 보고,
-아니면 서버를 띄운다. 이름은 build/make_portable.py 의 LAUNCHERS 가 정하고,
-tests/smoke.py 가 두 쪽 표시가 맞는지 확인한다.
+서버를 띄운다. 로봇 한 대를 짚어 보려면(--check) 검은 창에서
+    pibo-connect.exe -m pibo_connector --check 192.168.0.51
+처럼 준다 — 인자를 주면 여기는 빠지고 평소 경로로 간다.
 """
 
 import os
 import sys
 
-CHECK_MARK = "확인"          # 실행 파일 이름에 이게 있으면 --check
 NO_AUTOSTART = "PIBO_CONNECT_NO_AUTOSTART"
 NO_BROWSER = "PIBO_CONNECT_NO_BROWSER"
 
@@ -45,20 +44,8 @@ def _exe_dir():
     return Path(sys.executable).resolve().parent
 
 
-def _argv():
-    """넘길 인자. None 이면 그만둔다 ('인자 없음' 인 [] 과 구분해야 한다)."""
-    stem = os.path.splitext(os.path.basename(sys.executable))[0]
-    if CHECK_MARK in stem:
-        print("파이보 커넥터 — 로봇 한 대 확인하기\n")
-        print("로봇의 IP 주소를 쓰고 엔터를 눌러요. (예: 192.168.0.51)")
-        try:
-            ip = input("IP 주소: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            return None
-        if not ip:
-            print("\nIP 주소를 안 넣었어요. 창을 닫아도 돼요.")
-            return None
-        return ["--check", ip]
+def _argv() -> list:
+    """넘길 인자. 두 번 눌러 켜는 길이므로 기본은 없음이다."""
     args = []
     if os.environ.get(NO_BROWSER):
         args.append("--no-browser")
@@ -77,11 +64,8 @@ def _pause(msg: str) -> None:
 def _run() -> int:
     # 로봇 목록은 묶음 폴더 옆 data\ 에. 다음 버전으로 바꿔도 목록이 남게.
     os.environ.setdefault("PIBO_CONNECT_DATA", str(_exe_dir() / "data"))
-    argv = _argv()
-    if argv is None:
-        return 0
     from pibo_connector.__main__ import main
-    return main(argv)
+    return main(_argv())
 
 
 if _double_clicked():

@@ -255,18 +255,15 @@ def test_portable():
           mp.ROOT_KEEP == ("python3*.dll", "vcruntime*.dll"), mp.ROOT_KEEP)
 
     # ── 켜는 버튼 ──
-    check("켜는 버튼이 둘 다 .exe 다 (스크립트면 SAC 가 막는다)",
-          all(n.endswith(".exe") for n in mp.LAUNCHERS), mp.LAUNCHERS)
-    check("런처 이름이 서로 다르다", len(set(mp.LAUNCHERS)) == 2, mp.LAUNCHERS)
+    check("켜는 버튼이 .exe 다 (스크립트면 SAC 가 막는다)",
+          mp.LAUNCHER.endswith(".exe"), mp.LAUNCHER)
+    # 탐색기의 zip 풀기가 한글 이름을 못 살리는 경우가 있다 (실기에서 확인).
+    check("묶음이 만드는 이름이 ASCII 다",
+          mp.LAUNCHER.isascii() and mp.README_NAME.isascii(),
+          (mp.LAUNCHER, mp.README_NAME))
     sc = (ROOT / "build" / "sitecustomize.py").read_text(encoding="utf-8")
     ns = {}
     exec(compile(sc.split("if _double_clicked():")[0], "sitecustomize", "exec"), ns)
-    # sitecustomize 는 실행 파일 이름으로 무엇을 할지 가른다. 두 쪽이 어긋나면
-    # [로봇 확인하기] 를 눌렀는데 서버가 뜨거나, 그 반대가 된다.
-    check("확인 런처 이름에 sitecustomize 의 표시가 있다",
-          ns["CHECK_MARK"] in mp.LAUNCH_CHECK, (ns["CHECK_MARK"], mp.LAUNCH_CHECK))
-    check("시작 런처 이름에는 그 표시가 없다",
-          ns["CHECK_MARK"] not in mp.LAUNCH_RUN, mp.LAUNCH_RUN)
     check("sitecustomize 가 목록 자리를 실행 파일 옆 data 로 준다",
           f'"{config.DATA_ENV}"' in sc and "data" in sc,
           "환경변수 이름이 config.DATA_ENV 와 같아야 한다")

@@ -6,7 +6,7 @@
 빌드 폴더에 남아 있던 것에 기대고 있으면 여기서 걸린다.
 
 보는 것
-  1. 런처와 python.exe 에 PSF 서명이 남아 있나. 이 묶음의 존재 이유다 —
+  1. 런처에 PSF 서명이 남아 있나. 이 묶음의 존재 이유다 —
      스마트 앱 컨트롤은 서명 없는 프로그램도, 출처 불명 .bat 도 막는다.
      그래서 켜는 버튼이 '이름만 바꾼 서명된 python.exe' 여야 한다
   2. 묶음 안에 스크립트 켜는 버튼이 남아 있지 않나 (루트에 .bat 금지)
@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "build"))
 
-from make_portable import (APP_DIR, BUNDLE, LAUNCH_RUN, LAUNCHERS,  # noqa: E402
-                           PY_TAG, RUNTIME_DIR, verify_signature)
+from make_portable import (APP_DIR, BUNDLE, LAUNCHER, PY_TAG,  # noqa: E402
+                           README_NAME, RUNTIME_DIR, verify_signature)
 from tests._launch import Server, utf8_console                          # noqa: E402
 
 PAGES = (("/", "파이보 커넥터"), ("/static/app.js", ""),
@@ -91,7 +91,7 @@ def main() -> int:
 
     fails = []
     # python311.dll 은 실행 파일 옆(루트)에 있어야 한다. 옮기면 안 켜진다.
-    for need in (*LAUNCHERS, "먼저-읽어보세요.txt", f"python{PY_TAG}.dll",
+    for need in (LAUNCHER, f"{APP_DIR}/{README_NAME}", f"python{PY_TAG}.dll",
                  f"python{PY_TAG}._pth",
                  f"{APP_DIR}/{RUNTIME_DIR}/python{PY_TAG}.zip",
                  f"{APP_DIR}/sitecustomize.py",
@@ -104,14 +104,23 @@ def main() -> int:
         return 1
     print("ok  런처·런타임·앱이 다 있다")
 
-    # 선생님이 보는 건 런처와 읽을거리뿐이어야 한다. 루트에 exe 가 더 있으면
+    # 눌러야 할 것이 하나만 보여야 한다. 루트에 exe 가 더 있으면
     # (예: 원본 python.exe) 무엇을 눌러야 할지 헷갈린다.
     exes = sorted(f.name for f in root.glob("*.exe"))
-    if exes != sorted(LAUNCHERS):
-        print(f"!! 루트의 exe 가 런처 둘이 아니다: {exes}")
+    if exes != [LAUNCHER]:
+        print(f"!! 루트의 exe 가 {LAUNCHER} 하나가 아니다: {exes}")
         fails.append("루트 exe")
     else:
-        print(f"ok  루트의 exe 는 런처 둘뿐이다 ({len(list(root.glob('*')))}개 항목)")
+        print(f"ok  루트의 exe 는 {LAUNCHER} 하나뿐이다 "
+              f"({len(list(root.glob('*')))}개 항목)")
+
+    # 탐색기의 zip 풀기가 한글 이름을 못 살리는 경우가 있다 (실기에서 확인).
+    nonascii = [n for n in names if not n.isascii()]
+    if nonascii:
+        print(f"!! ASCII 아닌 파일 이름이 있다: {nonascii[:5]}")
+        fails.append("파일 이름")
+    else:
+        print("ok  묶음 안 파일 이름이 전부 ASCII 다")
 
     # 스크립트는 SAC 가 막는다 (실기 확인). 묶음 어디에도 있으면 안 된다.
     stray = sorted(str(f.relative_to(root)) for f in root.rglob("*.bat"))
@@ -133,14 +142,12 @@ def main() -> int:
     else:
         print("ok  ._pth 가 LF 이고 import site 가 있다")
 
-    print("\n서명 확인")
-    for name in LAUNCHERS:
-        try:
-            print(f"  · {name}")
-            verify_signature(root / name)
-        except SystemExit as ex:
-            print(f"!! {ex}")
-            fails.append(f"서명/{name}")
+    print(f"\n서명 확인 — {LAUNCHER}")
+    try:
+        verify_signature(root / LAUNCHER)
+    except SystemExit as ex:
+        print(f"!! {ex}")
+        fails.append("서명")
 
     if sys.platform != "win32":
         print("\n(윈도우가 아니라 기동 시험은 생략한다 — 묶음 안의 python.exe 는 윈도우용이다)")
@@ -153,17 +160,17 @@ def main() -> int:
     log = Path(tempfile.gettempdir())
     # 실행 파일은 절대경로로 준다. 윈도우의 CreateProcess 는 상대 실행 파일을
     # Popen 의 cwd= 가 아니라 이 프로세스의 현재 폴더 기준으로 찾는다.
-    runner = root / LAUNCH_RUN
+    runner = root / LAUNCHER
 
     # 1) 인자를 주는 길. ._pth 와 의존성이 맞는지 본다 (sitecustomize 는 빠진다).
-    print(f"\n1) {LAUNCH_RUN} -m pibo_connector")
+    print(f"\n1) {LAUNCHER} -m pibo_connector")
     _, f1 = serve([str(runner), "-m", "pibo_connector", "--no-browser"],
                   root, log / "portable_m.log", args.timeout, "-m 으로")
     fails += f1
 
     # 2) 선생님이 하는 길 — 인자 없이 두 번 누르기. sitecustomize 가 띄운다.
     #    브라우저는 열지 않게 환경변수로 말한다 (.bat 이 없어졌으니 이 길밖에 없다).
-    print(f"\n2) {LAUNCH_RUN} (두 번 누르기)")
+    print(f"\n2) {LAUNCHER} (두 번 누르기)")
     env = dict(os.environ, PIBO_CONNECT_NO_BROWSER="1")
     env.pop("PIBO_CONNECT_DATA", None)
     info, f2 = serve([str(runner)], root, log / "portable_click.log",
@@ -181,7 +188,7 @@ def main() -> int:
     if fails:
         print("\n실패: " + ", ".join(fails))
         return 1
-    print(f"\n묶음 정상 — [{LAUNCH_RUN}] 두 번 누르면 켜진다")
+    print(f"\n묶음 정상 — [{LAUNCHER}] 두 번 누르면 켜진다")
     return 0
 
 
