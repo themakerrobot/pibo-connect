@@ -205,7 +205,9 @@ EV 인증서는 바로 사라진다 — 어느 쪽을 살지는 예산 판단. �
 
 | | 2024년 판 (`240110v4`~`240701v1`) | 신형 |
 |---|---|---|
-| IDE | `ide/main.js` — Node.js, **50000** | `ide/run_ide.py` — Python, 80 |
+| **80** | **`tools/main.py`** — socket.io 지만 IDE 가 아니다 | IDE (`run_ide.py`) |
+| **50000** | **IDE** (`ide/main.js`, Node.js) | — |
+| 8080 | `booting.py` | `booting.py` |
 | `system.sh` | 9칸: … `WLAN0, SSID0, ETH1` | 12칸: … `WLAN0, ETH1, SSID, PSK, …` |
 | 실행 끝 표시 | `종료됨.` | `[exit]` |
 
@@ -243,12 +245,16 @@ return JSONResponse(content={'result':'ok', 'ssid':tmp[4].split('"')[1], …})
 pibo-connect-windows.exe --check 192.168.0.51
 ```
 
-TCP 8080 → IDE 포트(80/50000) → socket.io init → `system` 배열 → SN·IP·OS 까지
-단계별로 찍는다. 어디서 막혔는지 한 줄로 나온다.
+TCP 8080 → 열린 포트 → **`system` 이 오는 포트** → socket.io init → `system`
+배열 → SN·IP·OS 까지 단계별로 찍는다. 어디서 막혔는지 한 줄로 나온다.
+"80·50000 다 붙었지만 system 이 안 온다" 처럼 나오면 IDE 가 아닌 것이다.
 
-- 포트는 `robot.find_ide_port()` 가 80 → 50000 순으로 TCP 만 확인한다(0.6초).
-  신형은 80 이 바로 열려 두 번째로 안 간다 — 신형 교실에서 느려지지 않는다.
-  찾은 포트는 목록에 `ide_port` 로 저장해 실행·파일 열기에 그대로 쓴다.
+- **포트가 열렸는지로 IDE 를 가리면 안 된다.** 구형은 80 번에 `tools/main.py`
+  가 떠 있고 그것도 `fastapi_socketio` 라 접속까지 된다 — 다만 `system` 이벤트가
+  없어 응답이 없다. 실기에서 구형 로봇이 "0대" 로 나온 원인이 이것이었다.
+  `robot.try_port()` 가 80 → 50000 순으로 붙어 **`system` 이 오는 쪽**을 IDE 로
+  삼는다. 찾은 포트는 목록에 `ide_port` 로 저장해 실행·파일 열기에 그대로 쓴다.
+  신형은 80 에서 바로 `system` 이 와 두 번째로 안 간다.
 - CSV 는 **칸 수**로 가른다 (`robot.parse_system`). 추측이 아니라 두 판의
   `system.sh` echo 줄을 대조한 것이다. 구형에는 PSK 칸이 아예 없다.
 - socket.io 이벤트(`init`·`executeb`·`update`·`stop`·`load_directory`·`load`)는

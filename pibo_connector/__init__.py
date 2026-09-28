@@ -8,4 +8,4 @@
   - :8080 booting.py   HTTP       (/wifi, /wifi_scan, /device/{pkt})
 """
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"

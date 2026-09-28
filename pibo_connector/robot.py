@@ -49,17 +49,6 @@ async def remote_wifi_scan(session: aiohttp.ClientSession, ip: str,
         return []
 
 
-async def find_ide_port(ip: str, timeout: float = 0.6) -> Optional[int]:
-    """IDE 가 열려 있는 포트. 신형 80, 2024년 판 50000. 없으면 None.
-
-    TCP 접속만 해보므로 싸다 — 신형 교실에서는 80 이 바로 열려 두 번째는 안 간다.
-    """
-    for port in (config.IDE_PORT, config.IDE_PORT_LEGACY):
-        if await port_open(ip, port, timeout):
-            return port
-    return None
-
-
 async def port_open(ip: str, port: int, timeout: float = 0.5) -> bool:
     """TCP connect 만 해본다. 254개를 훑을 때 HTTP 보다 훨씬 싸다."""
     try:
@@ -215,19 +204,39 @@ class RobotLink:
         return await asyncio.wait_for(self._code, timeout=self.timeout)
 
 
-async def identify(ip: str, session: Optional[aiohttp.ClientSession] = None,
-                   timeout: float = 8.0, rules: Optional[dict] = None) -> Optional[dict]:
-    """한 대를 식별한다. init 한 번 + (필요하면) device 보조 판별."""
-    ide_port = await find_ide_port(ip)
-    if ide_port is None:
-        return None
+async def try_port(ip: str, port: int, timeout: float) -> Optional[dict]:
+    """그 포트에 붙어 init 을 쏴 보고, system 배열이 오면 파싱해 돌려준다.
 
-    info: Optional[dict] = None
+    **열려 있는지로 판단하면 안 된다.** 구형 OS 는 80 번에 tools/main.py 가
+    떠 있는데, 그것도 fastapi_socketio 라 접속 자체는 된다. 다만 system
+    이벤트가 없어 아무 응답이 없다. IDE 인지 아닌지는 system 이 가른다.
+    """
+    if not await port_open(ip, port, 0.6):
+        return None
     try:
-        async with RobotLink(ip, timeout=timeout, port=ide_port) as link:
-            info = await link.system()
+        async with RobotLink(ip, timeout=timeout, port=port) as link:
+            return await link.system()
     except Exception:
         return None
+
+
+async def identify(ip: str, session: Optional[aiohttp.ClientSession] = None,
+                   timeout: float = 8.0, rules: Optional[dict] = None) -> Optional[dict]:
+    """한 대를 식별한다. IDE 포트를 찾아 init → system, 그 다음 기종 판별.
+
+    포트는 신형 80, 구형 50000 순으로 본다. 어느 쪽이든 'system 배열이
+    오는 포트' 가 IDE 다 — 열려 있다는 것만으로는 IDE 라고 할 수 없다.
+    """
+    info: Optional[dict] = None
+    ide_port: Optional[int] = None
+    # system 을 기다리는 시간은 짧게 잡는다. 아닌 포트에서 오래 붙들리면
+    # 스캔이 느려진다 — 구형은 80(tools)에서 한 번 헛걸음하게 된다.
+    probe_timeout = min(timeout, 4.0)
+    for port in (config.IDE_PORT, config.IDE_PORT_LEGACY):
+        got = await try_port(ip, port, probe_timeout)
+        if got and got.get("sn"):
+            info, ide_port = got, port
+            break
     if not info or not info.get("sn"):
         return None
 

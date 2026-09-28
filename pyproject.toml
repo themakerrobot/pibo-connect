@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pibo-connect"
-version = "0.4.2"
+version = "0.4.3"
 description = "파이보/파이브레인 다대수 제어 — 브라우저 한 장으로 찾고, 점호하고, 같은 코드를 한 번에 실행한다"
 readme = "README.md"
 requires-python = ">=3.9"

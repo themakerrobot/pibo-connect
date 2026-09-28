@@ -109,14 +109,26 @@ async def diagnose(ip: str) -> List[tuple]:
     out.append((f"TCP :{config.SYS_PORT} (booting.py)", sys_open,
                 "" if sys_open else "닫혀 있다. 로봇이 켜져 있고 같은 망인지 확인"))
 
-    ide_port = await robot.find_ide_port(ip, timeout=1.0)
-    out.append((f"TCP :{config.IDE_PORT} 또는 :{config.IDE_PORT_LEGACY} (IDE)",
-                ide_port is not None,
-                f"{ide_port} 번" if ide_port else "둘 다 닫혀 있다"))
+    # 열려 있는 포트와, 실제로 IDE 인 포트는 다르다. 구형은 80 에 tools 가 있다.
+    opened = [p for p in (config.IDE_PORT, config.IDE_PORT_LEGACY)
+              if await robot.port_open(ip, p, 1.0)]
+    out.append((f"TCP :{config.IDE_PORT} / :{config.IDE_PORT_LEGACY}", bool(opened),
+                f"열림: {opened}" if opened else "둘 다 닫혀 있다"))
+    if not opened:
+        return out
+
+    ide_port, row = None, None
+    for p in opened:
+        got = await robot.try_port(ip, p, 4.0)
+        if got and got.get("sn"):
+            ide_port = p
+            break
+    out.append(("IDE 인 포트 (system 이 오는 쪽)", ide_port is not None,
+                f"{ide_port} 번" if ide_port else
+                f"{opened} 다 붙었지만 system 이 안 온다 — IDE 가 아니다"))
     if ide_port is None:
         return out
 
-    row = None
     try:
         async with robot.RobotLink(ip, timeout=8.0, port=ide_port) as link:
             fut = asyncio.get_running_loop().create_future()

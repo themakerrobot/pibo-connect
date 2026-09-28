@@ -145,6 +145,25 @@ def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = F
     return app80, app8080
 
 
+def build_tools_decoy():
+    """구형 OS 의 tools/main.py 흉내. 80 번에 있고 fastapi_socketio 라 접속은 되지만
+    system 이벤트가 없다 — 이것 때문에 멀쩡한 구형 로봇이 안 찾아졌다."""
+    sio = socketio.AsyncServer(async_mode="aiohttp", cors_allowed_origins="*")
+    app = web.Application()
+    sio.attach(app, socketio_path="/socket.io")
+
+    @sio.event
+    async def connect(sid, environ):
+        pass
+
+    @sio.on("init")
+    async def on_init(sid):
+        # tools 에는 system 이 없다. 아무 응답도 하지 않는다.
+        pass
+
+    return app
+
+
 async def run(args):
     app80, app8080 = build(args.sn, args.os, args.ip, not args.no_device, args.legacy,
                            args.broken_wifi)
@@ -154,8 +173,14 @@ async def run(args):
     r2 = web.AppRunner(app8080)
     await r2.setup()
     await web.TCPSite(r2, args.bind, args.sys_port).start()
+    extra = ""
+    if args.legacy and args.tools_decoy:
+        r3 = web.AppRunner(build_tools_decoy())
+        await r3.setup()
+        await web.TCPSite(r3, args.bind, 80).start()
+        extra = " / :80 (tools — system 없음)"
     print(f"mock pibo  SN={args.sn}  OS={args.os}  "
-          f"http://{args.bind}:{args.ide_port} (ide) / :{args.sys_port} (sys)")
+          f"http://{args.bind}:{args.ide_port} (ide) / :{args.sys_port} (sys){extra}")
     await asyncio.Event().wait()
 
 
@@ -168,6 +193,8 @@ def main():
     ap.add_argument("--ide-port", type=int, default=0, help="0 이면 판에 맞춰 고른다")
     ap.add_argument("--sys-port", type=int, default=8080)
     ap.add_argument("--no-device", action="store_true")
+    ap.add_argument("--no-tools-decoy", dest="tools_decoy", action="store_false",
+                    help="구형 흉내에서 80 번 tools 서버를 띄우지 않는다")
     ap.add_argument("--broken-wifi", action="store_true",
                     help="/wifi 가 500 을 내는 구형 로봇 흉내 — 그래도 찾아져야 한다")
     ap.add_argument("--legacy", action="store_true",
