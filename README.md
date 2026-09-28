@@ -1,4 +1,4 @@
-# pibo-connector
+# pibo-connect
 
 교실에 켜져 있는 **파이보 / 파이브레인을 브라우저 한 장으로** 찾고, 점호하고,
 같은 코드를 한 번에 실행한다.
@@ -18,7 +18,7 @@
 
 ## 받기
 
-**파이썬 없는 노트북** — [Releases](https://github.com/themakerrobot/pibo-connector/releases)
+**파이썬 없는 노트북** — [Releases](https://github.com/themakerrobot/pibo-connect/releases)
 
 | 노트북 | 파일 |
 |---|---|

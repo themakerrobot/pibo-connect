@@ -63,7 +63,7 @@ def build(tag: str, sha: str) -> str:
     if tag == "nightly":
         head = ("코드가 바뀔 때마다 자동으로 다시 만들어지는 **시험용**이에요.\n"
                 "수업에는 [정식 버전]"
-                "(https://github.com/themakerrobot/pibo-connector/releases/latest) 을 쓰세요.\n")
+                "(https://github.com/themakerrobot/pibo-connect/releases/latest) 을 쓰세요.\n")
         body = ""
     else:
         notes = section_for(tag)

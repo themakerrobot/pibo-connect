@@ -23,8 +23,6 @@ ROBOT_HOME = "/home/pi/code"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8900
 
-GITHUB_REPO = "themakerrobot/pibo-connector"
-
 
 def frozen() -> bool:
     """PyInstaller 로 묶인 실행 파일인가."""
