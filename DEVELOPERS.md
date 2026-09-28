@@ -1,0 +1,372 @@
+# pibo-connect — 개발자 문서
+
+쓰는 법은 [README.md](README.md) 에 있다. 여기는 왜 이렇게 만들었는지와
+만드는 법이다.
+
+```
+[노트북] pibo-connect ───┬── :80   socket.io  init / executeb / update / stop
+   └ 브라우저 (화면)      └── :8080 HTTP       /wifi · /wifi_scan · /device
+```
+
+브라우저는 UDP 를 못 쏘고 254개 TCP 스캔도 느리다. 그래서 스캔과 동시 시작
+트리거는 커넥터가 맡고, 브라우저는 화면만 담당한다.
+
+## 안전장치
+
+- **WiFi 비밀번호는 어디에도 남지 않는다.** `system` 배열 인덱스 9 와 `/wifi`
+  응답의 `psk` 는 평문이다. 커넥터는 받는 즉시 버리고, 저장소는 `psk`·`password`·
+  `key` 가 이름에 든 필드를 통째로 거른다. `tests/smoke.py` 가 매 CI 마다 확인한다
+- **`codepath` 는 하드코딩이고 화면에 나오지 않는다.** `executeb` 에는 `is_protect`
+  검사가 없다 (`execute` 에만 있다). 사용자가 고치게 두면 보호 디렉토리를 덮어쓴다
+- 기본 바인딩은 `127.0.0.1` 이다. `--host 0.0.0.0` 으로 열 때만 토큰이 붙는다
+
+## 화면
+
+**더 메이커 공통 "학습지" 테마**다 — `sense-lab/design/maker-ui.css` 를
+`static/maker-ui.css` 로 그대로 복사해 쓰고, 이 서비스 전용 스타일(`static/style.css`)은
+그 토큰만 쓴다. 미색 종이 바탕, 갈색 괘선 헤더, 남색 펜, 명조 서비스명, Pretendard
+셀프호스팅(오프라인용으로 실행 파일에 같이 묶인다). 어두운 테마는 없다 — 규격이
+단일 톤이다. 문구는 초등 수업 기준(해요체, 짧게). 영어는 `?lang=en`.
+
+테마를 바꾸려면 sense-lab 쪽 `maker-ui.css` 를 고친 뒤 여기로 다시 복사한다.
+`style.css` 는 손대지 않아도 된다.
+
+## 찾기
+
+```
+1) TCP connect :8080        — 가장 싸다. 없는 IP 를 여기서 전부 떨군다
+2) socket.io emit('init')   — SN · OS_VERSION · 온도 · SSID 를 한 번에
+```
+
+**[다시 확인]** 은 저장된 IP 로만 확인한다. 안 바뀌었으면 1~2초. 응답 없는
+놈이 있으면 그때만 전체 스캔을 돌리면 된다.
+
+> 공유기에 못 붙은 로봇(AP 모드, SSID `pibo-<SN>`)을 전파로 찾는 `POST /api/apscan` 이
+> 백엔드에 있지만 **화면에서는 뺐다**. 윈도우 노트북의 `netsh wlan` 은 위치 권한이
+> 없으면 빈 결과를 주고, 로봇에게 시키는 `/wifi_scan` 은 캐시라 오래된 값이 나온다 —
+> 교실에서 믿고 누를 수 있는 버튼이 아니었다. 리눅스 노트북에서 API 로 부르면 된다.
+
+### 목록의 키는 SN
+
+Pi 시리얼 뒤 8자리다. 가슴 화면의 SN, hostname, AP SSID 의 `pibo-<SN>` 이 전부
+같은 값이라 사람이 눈으로 맞춰볼 수 있다. IP 는 DHCP 라 다음날 바뀐다.
+
+### 기종 판별 (Pibo / PiBrain)
+
+**OS_VERSION** 으로 가른다. `system.sh` 가 `/home/pi/.OS_VERSION` 을 읽어
+`init` 응답에 실어 보내므로 추가 통신이 없다.
+
+기본 규칙은 소문자 부분문자열이고, 긴 조각을 먼저 본다:
+
+```json
+{ "pibrain": "pibrain", "pi_brain": "pibrain", "pibo": "pibo" }
+```
+
+새 이미지 이름이 생기면 화면의 **[종류 구분 설정]** 에서 조각 하나만 더하면 된다
+(`rules.json` 에 저장된다. 코드를 안 고친다). 어느 조각에도 안 걸리면 `?` 로
+두고 OS_VERSION 원문을 배지에 그대로 띄운다 — 추측으로 기종을 칠하지 않는다.
+
+## 실행
+
+체크한 로봇에 `executeb` 로 동시에 던지고, `update` 이벤트의 `record` 를
+로봇별로 받아 마지막 줄을 띄운다. 줄을 누르면 전체 로그가 펼쳐진다.
+
+로봇 안의 파일은 `executeb` 로 짧은 런처만 보내서 돌린다 — `.py` 는
+`runpy.run_path(..., run_name='__main__')`, `.sh` 는 `sh`. 대상 파일은 손대지
+않고, 없는 로봇은 출력에 `[missing] 경로` 가 찍힌다. 폴더 목록과 파일 읽기는
+IDE 의 `load_directory` · `load` 이벤트를 그대로 쓴다.
+
+> `load_directory` 는 IDE 의 작업 폴더를 바꾼다. 실행 cwd 가 거기 따라가므로
+> 커넥터가 목록을 다 본 뒤 `/home/pi/code` 로 되돌려 둔다.
+
+### 다 같이 시작
+
+`# --- GO ---` 로 나눈 코드에서, 전부 `[ready]` 를 찍으면 커넥터가 UDP `:50055`
+로 트리거를 쏜다. 고정 초를 기다리지 않고 실제 준비 개수를 센다.
+
+> 공유기가 무선 브로드캐스트를 막으면(AP isolation, 멀티캐스트 필터) 트리거가
+> 안 간다. 커넥터는 브로드캐스트와 유니캐스트를 둘 다 쏘지만, 그래도 막히면
+> `[timeout]` 으로 끝나 바로 알 수 있다. 그때는 그냥 [실행!] 으로 내려오면 된다.
+>
+> 로봇 안의 파일을 다 같이 시작하려면 내용을 알아야 GO 래퍼로 감쌀 수 있다.
+> 그래서 고른 첫 로봇에서 파일을 읽어와 전부에 밀어넣는다 (파이썬만).
+
+15대 동시 카메라는 대당 0.3~0.8 Mbps × airtime 2배 ≈ 24 Mbps.
+5GHz 80MHz 한 채널이면 여유다.
+
+## 옛날 OS 로봇
+
+**기준: 2024년 판(`240110v4`) 이상.** 설정은 없고, 찾을 때 확인해서 맞춘다.
+
+| | 2024년 판 (`240110v4`~`240701v1`) | 신형 |
+|---|---|---|
+| **80** | **`tools/main.py`** — socket.io 지만 IDE 가 아니다 | IDE (`run_ide.py`) |
+| **50000** | **IDE** (`ide/main.js`, Node.js) | — |
+| 8080 | `booting.py` | `booting.py` |
+| `system.sh` | 9칸: … `WLAN0, SSID0, ETH1` | 12칸: … `WLAN0, ETH1, SSID, PSK, …` |
+| 실행 끝 표시 | `종료됨.` | `[exit]` |
+
+24년 판 5개 태그(`240110v4` `240110v5` `240226v2` `240326v3` `240701v1`)를 전부
+대조했다 — `/wifi`·포트·CSV 칸수·socket.io 이벤트가 모두 같다.
+
+**실기 확인 완료** (2026-09-28, 교실 네트워크 `192.168.114`): `OPENPIBO_240326v3`,
+SN `cd488e95` 를 IP·버전·온도까지 정상으로 찾았다.
+
+- **포트가 열렸는지로 IDE 를 가리면 안 된다.** 구형은 80 번에 `tools/main.py`
+  가 떠 있고 그것도 `fastapi_socketio` 라 접속까지 된다 — 다만 `system` 이벤트가
+  없어 응답이 없다. 실기에서 구형 로봇이 "0대" 로 나온 원인이 이것이었다.
+  `robot.try_port()` 가 80 → 50000 순으로 붙어 **`system` 이 오는 쪽**을 IDE 로
+  삼는다. 찾은 포트는 목록에 `ide_port` 로 저장해 실행·파일 열기에 그대로 쓴다.
+  신형은 80 에서 바로 `system` 이 와 두 번째로 안 간다.
+- CSV 는 **칸 수**로 가른다 (`robot.parse_system`). 추측이 아니라 두 판의
+  `system.sh` echo 줄을 대조한 것이다. 구형에는 PSK 칸이 아예 없다.
+- socket.io 이벤트(`init`·`executeb`·`update`·`stop`·`load_directory`·`load`)는
+  이름과 형태가 같아 그대로 쓴다. 구형 `executeb` 에도 `isProtect` 검사가 없으므로
+  (`main.js:407`) codepath 하드코딩은 똑같이 중요하다.
+
+### `/wifi` 는 문지기로 쓰지 않는다
+
+파이보인지 가리는 기준은 **socket.io `init` → `system` 배열**이다. 그게 오면
+실행·파일 열기도 다 되고, 안 오면 어차피 못 쓴다.
+
+한때 `GET :8080/wifi` 가 `{"result":"ok"}` 를 주는지로 먼저 걸렀는데, 구형 OS 의
+그 핸들러가 이렇게 생겼다 (`240701v1` `system/booting.py`):
+
+```python
+with open('/etc/wpa_supplicant/wpa_supplicant.conf', 'r') as f:
+  tmp = f.readlines()
+return JSONResponse(content={'result':'ok', 'ssid':tmp[4].split('"')[1], …})
+```
+
+`tmp[4]`·`tmp[5]` 를 무조건 인덱싱하고 `.split('"')[1]` 을 한다. 그 파일이
+없거나·6줄이 안 되거나·따옴표가 없으면 500 이 나고, **멀쩡한 로봇이 목록에서
+사라졌다.** 실기에서 드러났다. 응답에 PSK 가 평문으로 들어 있기도 해서 지금은
+아예 부르지 않는다.
+
+### 2023년 판 이하
+
+`231123v2` 이하도 IDE 포트 50000 이 같고 CSV 8칸을 지금 파서가 그대로 맞게
+읽으므로 **원리상 찾아질 수 있다**. 다만 실물이 없어 확인하지 못했고 교실에도
+거의 없어, 기준은 2024년 판으로 둔다.
+
+## 윈도우 배포 — 왜 zip 묶음인가
+
+서명 없는 exe 는 Windows 11 **스마트 앱 컨트롤(SAC)** 에서 막힐지 아닐지가
+빌드마다 갈린다. SAC 는 파일 내용을 보지 않고 그 파일의 sha256 을 Microsoft
+클라우드에 물어 '세상에서 본 적 있나' 로 판정한다. 서명이 없으면 빌드마다 해시가
+새것이라 평판이 0 이고, **같은 코드로 만든 연속 릴리스끼리도 결과가 갈린다** —
+0.4.1·0.4.2 는 통과했는데 0.4.3 릴리스판은 막혔고, 같은 커밋의 nightly 는
+통과했다 (워크플로 실행이 달라 바이너리가 바이트 단위로 다르다). 빌드 설정 쪽
+차이는 없었다: `git diff 17dedce a1fef16 -- build/ .github/workflows/
+requirements.txt` 가 비어 있다.
+
+zip 묶음은 그 판정을 피하지 않고 **대상을 바꾼다.** 실행되는 PE 는 우리 exe 가
+아니라 python.org 배포본의 `python.exe` 이고, 그건 Python Software Foundation
+이름으로 Authenticode 서명이 되어 있다.
+
+```
+pibo-connect/
+  pibo-connect.exe            python.exe 복사본 (PSF 서명). 이걸 누른다
+  python311.dll  python3.dll  vcruntime140*.dll   옮길 수 없는 것들 (아래)
+  python311._pth              sys.path 를 app 아래로 고정
+  app/
+    README.txt                선생님용 안내
+    runtime/                  python311.zip · *.pyd · libssl-3 · sqlite3 …
+    sitecustomize.py          두 번 눌렀을 때 커넥터를 띄우는 곳
+    pibo_connector/  examples/  lib/
+  data/                       찾은 로봇 목록 (처음 켤 때 생긴다)
+```
+
+**켜는 버튼이 `.bat` 이 아니라 `.exe` 인 이유**: 처음엔 `시작하기.bat` 으로 냈는데
+실기에서 SAC 가 그것도 막았다. SAC 는 서명 없는 프로그램만이 아니라 **출처 불명
+스크립트(`.bat` 포함)** 도 막는다. 그래서 스크립트를 아예 쓰지 않는다 — 켜는 버튼은
+`python.exe` 를 복사해 이름만 바꾼 것이고(Authenticode 서명은 파일 내용에 붙으므로
+개명해도 PSF 서명이 유효하다), 두 번 누르면 `app/sitecustomize.py` 가 `site` 초기화
+때 자동으로 import 되어 커넥터를 띄운다. 결과적으로 묶음 안에서 실행되는 PE 는 PSF 가
+서명한 것이고, 우리 것은 `.py` 텍스트뿐이다. **이 묶음은 실기에서 차단 없이 켜졌다.**
+
+**루트에 무엇이 남는가**: 눌러야 할 것이 하나만 보여야 하므로 embeddable 은
+`app/runtime` 으로 넣는다. 다만 `python3*.dll` 과 `vcruntime*.dll` 은 옮길 수
+없다 — 실행 파일의 import table 이 그 이름을 옆에서 찾고, 없으면
+"python311.dll 을 찾을 수 없습니다" 로 안 켜진다. `python311.zip` 과 `.pyd` 는
+`._pth` 로 자리를 알려주면 되고, `.pyd` 에 딸린 DLL(`libssl-3`, `libcrypto-3`,
+`libffi-8`, `sqlite3`)은 확장 모듈이 `LOAD_WITH_ALTERED_SEARCH_PATH` 로 불리는
+덕에 그 `.pyd` 와 같은 폴더에서 찾아진다. 루트 항목은 7개, 그중 실행 파일은
+런처 하나뿐이고 `tests/portable_smoke.py` 가 그것만 있는지 확인한다.
+
+**파일 이름은 전부 ASCII 다.** 탐색기의 zip 풀기가 한글 이름을 제대로 못 살리는
+경우가 있다 — 실기에서 이상하게 보였다. 한글은 파일 안에만 있다.
+`make_portable` 이 묶기 전에, `portable_smoke` 가 푼 뒤에 각각 확인한다.
+
+**묶음에는 `.bat` 이 하나도 없다.** SAC 가 막는 종류를 아예 두지 않는다.
+`tests/portable_smoke.py` 가 묶음 전체에 `.bat`/`.cmd` 가 없는지 매번 확인한다.
+
+콘솔 코드페이지는 파이썬이 `SetConsoleOutputCP(65001)` 로 직접 바꾼다
+(`__main__._utf8_console`) — 예전엔 `.bat` 의 `chcp 65001` 이 하던 일이고, 묶음에서
+`.bat` 을 없애면서 옮겼다. exe 도 같이 덕을 본다 (한글 안 쓰는 윈도우에서 검은 창
+한글이 깨지던 것). 한글 안내는 전부 파이썬이 찍는다.
+
+### 서명 확인은 추측하지 않는다
+
+`build/make_portable.py` 가 세 번 본다.
+
+1. PE 의 Certificate Table 에 PKCS#7 서명 blob 이 있나 — 파이썬만으로, 어디서든
+2. 그 blob 의 인증서가 `Python Software Foundation` 을 담고 있나 — 어디서든
+3. `Get-AuthenticodeSignature` 로 체인과 Subject 까지 — 윈도우에서, 되는 경우
+
+1·2 를 못 넘으면 빌드를 세운다. 3 은 러너에 따라 cmdlet 이 안 붙어서
+(`windows-latest` 의 Windows PowerShell 5.1 에서 `Microsoft.PowerShell.Security`
+로드가 실패한다) `pwsh` → `powershell` 순으로 시도하고, 둘 다 안 되면 못 했다고만
+말한다. 돌기만 하면 `Valid` 가 아닐 때 세운다. 서명 없는 묶음은 exe 와 다를 게 없으니까.
+
+실측 (CI 로그): `python-3.11.9-embed-amd64.zip` 의 `python.exe` 는
+`Authenticode 12056 bytes` 서명을 갖고 있고, 체인은
+`CN=Python Software Foundation, O=Python Software Foundation, L=Beaverton,
+S=Oregon, C=US` 로 `Valid` 다.
+
+### SmartScreen (exe 쪽)
+
+`pibo-connect-windows.exe` 를 직접 줄 때 **"Windows의 PC 보호"** 가 뜬다. 두 조건이
+같이 맞을 때다: 파일에 "인터넷에서 받았다" 표시(Mark of the Web)가 붙어 있고,
+Microsoft 가 그 파일 해시를 모를 때. 빌드마다 해시가 바뀌므로 새 버전은 늘
+"모름"이다. 넘어가는 법은 "추가 정보 → 실행" 한 번 / 속성 맨 아래 "차단 해제" /
+표시가 안 붙는 경로(USB 등)로 전달. 그 PC 에서는 한 번이면 된다.
+
+zip 묶음을 주면 이 문제 자체가 없다.
+
+### 근본 해결은 코드 서명
+
+인증서(.pfx)가 생기면 리포 secret 두 개만 넣으면 CI 가 윈도우 빌드에 자동으로
+서명한다 (`.github/workflows/release.yml`):
+
+| secret | 값 |
+|---|---|
+| `WIN_CERT_PFX_B64` | `.pfx` 를 base64 로 (`certutil -encode cert.pfx out.txt` 또는 `base64 -w0 cert.pfx`) |
+| `WIN_CERT_PASSWORD` | pfx 비밀번호 |
+
+secret 이 없으면 그 단계는 건너뛴다. OV 인증서는 평판을 쌓아야 경고가 사라지고,
+EV 인증서는 바로 사라진다 — 어느 쪽을 살지는 예산 판단. 가격·발급 조건은 CA 마다
+다르니 **확인 필요**.
+
+### exe 아이콘이 옛것으로 보일 때
+
+탐색기 아이콘 캐시다. 같은 이름의 exe 를 같은 폴더에 다시 받으면 옛 아이콘이
+남는다. 파일 이름을 바꾸거나 다른 폴더로 옮기거나 `ie4uinit.exe -show` 를 한 번
+돌리면 된다. 아이콘 자체는 exe 리소스에 들어 있다 (`RT_ICON` 6개, sense-lab 의
+ico 와 바이트 단위로 같다 — pefile 로 확인했다).
+
+## 검증
+
+```bash
+python -m tests.smoke            # 파싱 · 판별 · PSK 유출 · 래퍼 · 런처 · 번들 경로 · 묶음 배치 · 서버 기동
+python -m tests.exe_smoke dist/pibo-connect   # 묶은 실행 파일이 실제로 뜨는지 (CI 가 세 OS 에서 돌린다)
+python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip   # zip 을 풀어서 켜 본다 (윈도우)
+```
+
+기기 없이 전 경로를 돌려보려면 가짜 로봇을 띄운다:
+
+```bash
+python -m tests.mock_pibo --sn cd488e95 --os piBo_260915v1-ph &
+python run.py
+# 화면에서 서브넷을 127.0.0 으로 두고 [찾기]
+```
+
+PiBrain 쪽 판별까지 보려면 OS 이름만 바꿔 한 대 더 띄우면 된다:
+
+```bash
+python -m tests.mock_pibo --sn 1a2b3c4d --os piBrain_260915v1 \
+  --ide-port 8081 --sys-port 8082
+```
+
+구형 흉내 (50000 포트, 9칸 CSV, `종료됨.`, 80번의 `tools` 미끼까지):
+
+```bash
+python -m tests.mock_pibo --legacy &
+python run.py
+```
+
+기기가 있으면:
+
+1. 로봇 2대를 켜고 커넥터를 띄운 뒤 [찾기] — SN · OS_VERSION 과 함께 뜨는지 ✔
+2. `print('hello')` 를 [실행] — 양쪽 출력에 `hello` 와 `[exit]` 이 뜨는지
+3. 커넥터를 껐다 켜서 목록이 남아 있는지
+4. 15대까지 올려 스캔 시간과 동시 실행이 견디는지
+
+## 빌드
+
+### exe
+
+```bash
+pip install -r requirements.txt pyinstaller
+pyinstaller build/pibo-connect.spec --noconfirm
+# dist/pibo-connect(.exe)
+```
+
+`static/`(테마·폰트·이미지 포함, 약 3.4MB) 과 `examples/` 는 spec 의 `datas` 로
+같이 묶인다 — `config.py` 가 보는 자리(`_MEIPASS/static`, `_MEIPASS/examples`)와
+정확히 맞아야 하고, `tests/smoke.py` 와 `tests/exe_smoke.py` 가 폰트·이미지까지
+실제로 서빙되는지 확인한다. 윈도우 아이콘 `build/pibo-connect.ico` 는
+sense-lab 의 파이보 얼굴(`tools/portable/icon.ico`) 그대로다.
+
+### 풀어서 쓰는 묶음
+
+```bash
+python build/make_portable.py --out dist/pibo-connect-windows-portable.zip
+python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip
+```
+
+`python-3.11.9-embed-amd64.zip` 을 python.org 에서 받아 서명을 확인한 뒤,
+의존성을 `app/lib` 에 깔고 `python311._pth` 로 `sys.path` 를 `app/runtime` ·
+`app` · `app/lib` 로 고정한다. 윈도우가 아닌 데서도 만들 수 있다
+(`pip --platform win_amd64` 로 윈도우 휠을 받는다). 단 체인 검증과 기동 시험은
+윈도우에서만 돌아간다 — CI 의 `windows-latest` 잡이 그걸 맡는다.
+
+묶음의 배치는 소스 실행(`frozen=False`)과 같다. `app/pibo_connector/static` 이
+`config.static_dir()`, `app/examples` 가 `config.examples_dir()` 다. exe 의 spec 처럼
+따로 맞출 게 없지만 `tests/smoke.py` 의 `test_portable` 이 그 대응과 `._pth` 내용을
+매번 확인한다.
+
+### CI
+
+`main` push 는 `nightly` 를, `v*` 태그는 정식 릴리스를 만든다
+(`.github/workflows/release.yml`). 새 버전을 낼 때는 `CHANGELOG.md` 맨 위에 절을
+하나 더하고 `pibo_connector/__init__.py` 와 `pyproject.toml` 의 버전을 같은 번호로
+올린 뒤 태그한다. 셋 중 하나라도 어긋나면 CI 가 멈춘다. 릴리스 본문은
+`build/release_notes.py` 가 CHANGELOG 에서 만든다.
+
+`windows-latest` 잡에서 exe 와 묶음을 같이 만들고, 둘 다 **실제로 띄워 화면이
+나오는 것을 확인한 뒤에만** 릴리스에 올린다.
+
+## 근거
+
+전부 `themakerrobot/openpibo-os.pibo` 코드에서 확인한 것이다.
+
+| 사실 | 근거 |
+|---|---|
+| IDE(80) 가 socket.io 서버다 | `ide/run_ide.py` `SocketManager` |
+| CORS 전면 허용 | `ide/run_ide.py` `allow_origins=["*"]` |
+| `init` → `system` 이벤트로 기기 정보 | `ide/run_ide.py` `handle_init` |
+| 그 배열이 `system.sh` 의 CSV 그대로 | `system/system.sh` 마지막 `echo` |
+| `executeb` 로 코드 실행, `update.record` 로 출력 | `ide/run_ide.py` `handle_executeb`, `execute` |
+| `executeb` 에는 `is_protect` 가 없다 | `handle_execute` 와 비교 |
+| `stop` 이 실행을 죽인다 | `ide/run_ide.py` `handle_stop` |
+| 8080 은 `/wifi`, `/wifi_scan`, `/device/{pkt}` | `system/booting.py` |
+| `/wifi` 응답에 psk 평문이 있다 | `system/booting.py` |
+| 폴더 목록 · 파일 읽기 이벤트가 있다 | `ide/run_ide.py` `handle_load_directory`, `handle_load` |
+| `load_directory` 가 IDE 작업 폴더(PATH)를 바꾼다 | `ide/run_ide.py` `global PATH` |
+| AP SSID 가 `pibo-<시리얼 뒤 8자리>` | `system/hotspot.sh` `AP_SSID` |
+| 구형 IDE 는 Node.js 이고 포트가 50000 | `240701v1` `ide/main.js:12`, `system/init:35` |
+| 구형 80 번은 `tools/main.py` 다 | `240701v1` `system/init:36` (`default=80`) |
+| 구형 `system.sh` 는 9칸이고 순서가 다르다 | `240701v1` `system/system.sh` 마지막 `echo` |
+| hostname 도 같은 8자리 | `system/init` |
+| PiBrain 은 GPIO 직결, Pibo 는 UART device 보드 | `openpibo/device.py` `DeviceByPiBrain` / `DeviceByPibo` |
+
+`system` 배열 인덱스 (`system/system.sh`):
+
+| i | 값 | i | 값 |
+|---|---|---|---|
+| 0 | Pi 시리얼 (뒤 8자리 = SN) | 6 | wlan0 IP |
+| 1 | `.OS_VERSION` | 7 | eth1 IP |
+| 2 | uptime | 8 | 접속 SSID |
+| 3 | 온도 | **9** | **WiFi 비밀번호 (평문 — 버린다)** |
+| 4, 5 | 메모리 | 10, 11 | identity, key-mgmt |
