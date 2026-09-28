@@ -57,8 +57,13 @@ def main(argv=None) -> int:
                     help=f"포트 (기본 {config.DEFAULT_PORT}, 막혀 있으면 다음 포트)")
     ap.add_argument("--no-browser", action="store_true", help="브라우저를 열지 않는다")
     ap.add_argument("--token", default="", help="접속 토큰 직접 지정")
+    ap.add_argument("--check", metavar="IP",
+                    help="로봇 한 대를 단계별로 짚어 본다 (안 찾아질 때)")
     ap.add_argument("--version", action="version", version=f"pibo-connect {__version__}")
     args = ap.parse_args(argv)
+
+    if args.check:
+        return _check(args.check)
 
     # 밖으로 여는 경우에만 토큰을 건다. 로컬 전용이면 성가시기만 하다.
     token = args.token
@@ -94,6 +99,21 @@ def main(argv=None) -> int:
     uvicorn.run(app, host=args.host, port=port, log_level="warning",
                 access_log=False)
     return 0
+
+
+def _check(ip: str) -> int:
+    """--check: 어디서 막히는지 콘솔에 찍는다. 서버를 띄우지 않는다."""
+    import asyncio
+    from .scan import diagnose
+
+    print(f"pibo-connect {__version__} — {ip} 확인\n")
+    rows = asyncio.run(diagnose(ip))
+    for step, ok, detail in rows:
+        print(f"  {'ok  ' if ok else '안됨'}  {step}" + (f"  — {detail}" if detail else ""))
+    good = rows and all(ok for _, ok, _ in rows)
+    print("\n" + ("이 로봇은 찾아집니다." if good else
+                  "여기서 막혔습니다. 위 '안됨' 줄을 알려주세요."))
+    return 0 if good else 1
 
 
 def _open(url: str) -> None:

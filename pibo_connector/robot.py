@@ -17,25 +17,9 @@ from . import config, detect
 
 
 # ── HTTP (:8080) ──────────────────────────────────────────────────────
-async def is_alive(session: aiohttp.ClientSession, ip: str,
-                   timeout: float = 1.5) -> bool:
-    """:8080/wifi 가 {"result":"ok"} 를 주면 파이보 계열이다.
-
-    ⚠ 이 응답에는 WiFi 비밀번호(psk)가 평문으로 들어 있다 (booting.py).
-    result 만 보고 나머지는 즉시 버린다. 호출자에게 돌려주지 않는다.
-    """
-    try:
-        async with session.get(f"http://{ip}:{config.SYS_PORT}/wifi",
-                               timeout=aiohttp.ClientTimeout(total=timeout)) as r:
-            if r.status != 200:
-                return False
-            d = await r.json(content_type=None)
-            return isinstance(d, dict) and d.get("result") == "ok"
-    except Exception:
-        return False
-    # 여기서 d 는 스코프를 벗어나 GC 된다. 어디에도 남기지 않는다.
-
-
+# /wifi 는 쓰지 않는다. 구형 OS 의 그 핸들러가 wpa_supplicant.conf 를 무조건
+# tmp[4]·tmp[5] 로 인덱싱해 500 이 나기 쉽고, 응답에 WiFi 비밀번호가 평문으로
+# 들어 있다. 파이보인지 가리는 것은 socket.io init → system 이 한다.
 async def device_probe(session: aiohttp.ClientSession, ip: str,
                        timeout: float = 2.0) -> Optional[str]:
     """GET /device/#40:! — device 보드 시스템 패킷. 기종 보조 판별용."""

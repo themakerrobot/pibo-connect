@@ -14,7 +14,8 @@ import socketio
 from aiohttp import web
 
 
-def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = False):
+def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = False,
+          broken_wifi: bool = False):
     sio = socketio.AsyncServer(async_mode="aiohttp", cors_allowed_origins="*")
     app80 = web.Application()
     sio.attach(app80, socketio_path="/socket.io")
@@ -114,6 +115,11 @@ def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = F
     app8080 = web.Application()
 
     async def wifi(_req):
+        if broken_wifi:
+            # 구형 240701v1 의 /wifi 는 wpa_supplicant.conf 를 무조건
+            # tmp[4]·tmp[5] 로 인덱싱한다. 파일이 없거나 짧으면 이렇게 500 이 난다.
+            return web.json_response({"detail": "IndexError: list index out of range"},
+                                     status=500)
         # booting.py 는 psk 를 평문으로 돌려준다
         return web.json_response({"result": "ok", "ssid": "classroom-5g",
                                   "psk": "LeakCanary!234", "ipaddress": ip,
@@ -140,7 +146,8 @@ def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = F
 
 
 async def run(args):
-    app80, app8080 = build(args.sn, args.os, args.ip, not args.no_device, args.legacy)
+    app80, app8080 = build(args.sn, args.os, args.ip, not args.no_device, args.legacy,
+                           args.broken_wifi)
     r1 = web.AppRunner(app80)
     await r1.setup()
     await web.TCPSite(r1, args.bind, args.ide_port).start()
@@ -161,6 +168,8 @@ def main():
     ap.add_argument("--ide-port", type=int, default=0, help="0 이면 판에 맞춰 고른다")
     ap.add_argument("--sys-port", type=int, default=8080)
     ap.add_argument("--no-device", action="store_true")
+    ap.add_argument("--broken-wifi", action="store_true",
+                    help="/wifi 가 500 을 내는 구형 로봇 흉내 — 그래도 찾아져야 한다")
     ap.add_argument("--legacy", action="store_true",
                     help="구형 240701v1 흉내 — IDE 50000, system.sh 9칸, '종료됨.'")
     args = ap.parse_args()

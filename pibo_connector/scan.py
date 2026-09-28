@@ -2,7 +2,7 @@
 
 import asyncio
 import re
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional  # noqa: F401
 
 import aiohttp
 
@@ -70,9 +70,14 @@ async def scan_subnet(fleet: Fleet, subnet: str, progress: Progress = _noop,
     async with aiohttp.ClientSession() as session:
         async def check(ip: str):
             nonlocal idone
-            info = None
-            if await robot.is_alive(session, ip):
-                info = await robot.identify(ip, session=session, rules=rules)
+            # 파이보인지 가리는 기준은 socket.io init → system 배열이다.
+            # 그게 오면 실행·파일 열기도 다 되고, 안 오면 어차피 못 쓴다.
+            #
+            # 예전에는 GET :8080/wifi 가 {"result":"ok"} 를 주는지로 먼저 걸렀는데,
+            # 구형 OS(240701v1)의 그 핸들러가 wpa_supplicant.conf 를 무조건
+            # tmp[4]·tmp[5] 로 인덱싱해서 파일이 없거나 짧으면 500 이 난다.
+            # 멀쩡한 로봇이 그 때문에 목록에서 사라졌다. 그래서 문지기로 안 쓴다.
+            info = await robot.identify(ip, session=session, rules=rules)
             idone += 1
             progress({"phase": "identify", "done": idone, "total": len(alive),
                       "found": len(out)})
@@ -90,6 +95,53 @@ async def scan_subnet(fleet: Fleet, subnet: str, progress: Progress = _noop,
         progress({"phase": "found", "robot": row})
 
     fleet.save()
+    return out
+
+
+async def diagnose(ip: str) -> List[tuple]:
+    """로봇 한 대를 단계별로 짚어 본다. [(단계, 됐나, 자세히)].
+
+    '안 찾아져요' 가 어디서 막힌 건지 보려고 쓴다 — 포트인지, IDE 인지,
+    system 배열인지. 화면 없이 콘솔에서 바로 확인할 수 있어야 한다.
+    """
+    out = []
+    sys_open = await robot.port_open(ip, config.SYS_PORT, 1.0)
+    out.append((f"TCP :{config.SYS_PORT} (booting.py)", sys_open,
+                "" if sys_open else "닫혀 있다. 로봇이 켜져 있고 같은 망인지 확인"))
+
+    ide_port = await robot.find_ide_port(ip, timeout=1.0)
+    out.append((f"TCP :{config.IDE_PORT} 또는 :{config.IDE_PORT_LEGACY} (IDE)",
+                ide_port is not None,
+                f"{ide_port} 번" if ide_port else "둘 다 닫혀 있다"))
+    if ide_port is None:
+        return out
+
+    row = None
+    try:
+        async with robot.RobotLink(ip, timeout=8.0, port=ide_port) as link:
+            fut = asyncio.get_running_loop().create_future()
+
+            @link.sio.on("system")
+            async def _cap(v):
+                if not fut.done():
+                    fut.set_result(v)
+
+            await link.sio.emit("init")
+            row = await asyncio.wait_for(fut, timeout=8.0)
+        out.append(("socket.io 접속 + init", True, f"{ide_port} 번"))
+    except Exception as ex:
+        out.append(("socket.io 접속 + init", False, f"{type(ex).__name__}: {ex}"))
+        return out
+
+    n = len(row) if isinstance(row, list) else 0
+    # 인덱스 9(신형 PSK)는 찍지 않는다
+    shown = [x for i, x in enumerate(row or []) if i != 9]
+    out.append(("system 배열", n > 0, f"{n}칸: {shown}"))
+    if n:
+        info = robot.parse_system(row)
+        ok = bool(info.get("sn"))
+        out.append(("SN·IP·OS 읽기", ok,
+                    f"SN={info.get('sn')} IP={info.get('ip')} OS={info.get('os')}"))
     return out
 
 
