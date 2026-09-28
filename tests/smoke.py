@@ -225,8 +225,10 @@ def test_portable():
     따로 맞출 게 없지만, 확인은 해 둔다 — app/ 안의 배치가 틀리면
     풀어 쓴 PC 에서만 static 이 404 다.
 
-    .bat 은 ASCII 여야 한다. cmd.exe 는 배치 파일을 콘솔 코드페이지로 읽어서,
-    UTF-8 한글을 넣으면 chcp 65001 을 먼저 해도 깨진다. 한글은 파이썬이 찍는다.
+    켜는 버튼은 스크립트가 아니어야 한다. 스마트 앱 컨트롤은 서명 없는
+    프로그램만이 아니라 출처 불명 .bat 도 막는다 (실기에서 확인했다).
+    그래서 버튼은 '이름만 바꾼 서명된 python.exe 복사본' 이고, 두 번 눌렀을 때
+    app/sitecustomize.py 가 커넥터를 띄운다.
     """
     print("풀어서 쓰는 묶음")
     sys.path.insert(0, str(ROOT / "build"))
@@ -240,48 +242,66 @@ def test_portable():
 
     pth = mp.PTH_LINES
     check("._pth 가 표준 라이브러리 zip 을 먼저 본다", pth[0] == f"python{mp.PY_TAG}.zip", pth)
-    check("._pth 에 app 이 있다", f"..\\{mp.APP_DIR}" in pth, pth)
-    check("._pth 에 app/lib 이 있다", f"..\\{mp.APP_DIR}\\{mp.LIB_DIR}" in pth, pth)
-    # import site 가 없으면 importlib.metadata 가 의존성 정보를 못 읽는다.
+    check("._pth 에 app 이 있다", mp.APP_DIR in pth, pth)
+    check("._pth 에 app/lib 이 있다", f"{mp.APP_DIR}\\{mp.LIB_DIR}" in pth, pth)
+    # import site 가 없으면 sitecustomize 가 안 불려서 두 번 눌러도 안 켜진다.
     check("._pth 에 import site 가 있다", "import site" in pth, pth)
+    # 루트에 펼치므로 상대경로에 .. 가 있으면 안 된다.
+    check("._pth 에 .. 가 없다 (루트에 펼친다)",
+          not any(l.startswith("..") for l in pth), pth)
 
-    for name, bat in (("시작하기", mp.START_BAT), ("로봇 확인하기", mp.CHECK_BAT)):
-        try:
-            bat.encode("ascii")
-            ascii_ok = True
-        except UnicodeEncodeError:
-            ascii_ok = False
-        check(f"{name}.bat 은 ASCII 다", ascii_ok,
-              "cmd.exe 가 읽는 코드페이지가 PC 마다 달라 한글은 깨진다")
-        check(f"{name}.bat 이 UTF-8 콘솔로 바꾼다", "chcp 65001" in bat)
-        check(f"{name}.bat 이 자기 폴더로 이동한다", 'cd /d "%~dp0"' in bat)
-        check(f"{name}.bat 이 묶음 안 python.exe 를 쓴다",
-              '"python\\python.exe"' in bat)
-        check(f"{name}.bat 이 압축 안 풀고 눌렀을 때를 막는다",
-              'if not exist "python\\python.exe"' in bat)
-    check("시작하기.bat 이 -m pibo_connector 로 띄운다",
-          "-m pibo_connector %*" in mp.START_BAT)
-    check("시작하기.bat 이 목록 자리를 묶음 옆 data\\ 로 준다",
-          f'set "{config.DATA_ENV}=%~dp0data"' in mp.START_BAT,
+    # ── 켜는 버튼 ──
+    check("켜는 버튼이 둘 다 .exe 다 (스크립트면 SAC 가 막는다)",
+          all(n.endswith(".exe") for n in mp.LAUNCHERS), mp.LAUNCHERS)
+    check("런처 이름이 서로 다르다", len(set(mp.LAUNCHERS)) == 2, mp.LAUNCHERS)
+    sc = (ROOT / "build" / "sitecustomize.py").read_text(encoding="utf-8")
+    ns = {}
+    exec(compile(sc.split("if _double_clicked():")[0], "sitecustomize", "exec"), ns)
+    # sitecustomize 는 실행 파일 이름으로 무엇을 할지 가른다. 두 쪽이 어긋나면
+    # [로봇 확인하기] 를 눌렀는데 서버가 뜨거나, 그 반대가 된다.
+    check("확인 런처 이름에 sitecustomize 의 표시가 있다",
+          ns["CHECK_MARK"] in mp.LAUNCH_CHECK, (ns["CHECK_MARK"], mp.LAUNCH_CHECK))
+    check("시작 런처 이름에는 그 표시가 없다",
+          ns["CHECK_MARK"] not in mp.LAUNCH_RUN, mp.LAUNCH_RUN)
+    check("sitecustomize 가 목록 자리를 실행 파일 옆 data 로 준다",
+          f'"{config.DATA_ENV}"' in sc and "data" in sc,
           "환경변수 이름이 config.DATA_ENV 와 같아야 한다")
-    check("로봇 확인하기.bat 이 --check 를 쓴다", "--check %ip%" in mp.CHECK_BAT)
+    # 두 번 눌러 들어온 대화형(argv == ['']) 일 때만 끼어들어야 한다.
+    # 안 그러면 -m pibo_connector 가 스스로를 두 번 띄운다.
+    for argv, want in (([""], True), (["-m"], False), (["x.py", "--check"], False)):
+        old_argv, sys.argv = sys.argv, list(argv)
+        try:
+            got = ns["_double_clicked"]()
+        finally:
+            sys.argv = old_argv
+        check(f"argv={argv} 일 때 자동 시작 {'함' if want else '안 함'}", got is want)
+
+    # 개발자용 .bat 은 app/ 안에만, ASCII 로.
+    try:
+        mp.OPTIONS_BAT.encode("ascii")
+        ascii_ok = True
+    except UnicodeEncodeError:
+        ascii_ok = False
+    check("run-with-options.bat 은 ASCII 다", ascii_ok,
+          "cmd.exe 가 읽는 코드페이지가 PC 마다 달라 한글은 깨진다")
+    check("run-with-options.bat 이 묶음 안 python.exe 를 쓴다",
+          '"python.exe" -m pibo_connector' in mp.OPTIONS_BAT)
 
     # 환경변수 우회가 실제로 먹는지. 안 먹으면 목록이 묶음 밖에 생긴다.
     import os
     with tempfile.TemporaryDirectory() as td:
-        want = Path(td) / "data"
+        want_dir = Path(td) / "data"
         old = os.environ.get(config.DATA_ENV)
-        os.environ[config.DATA_ENV] = str(want)
+        os.environ[config.DATA_ENV] = str(want_dir)
         try:
-            got = config.data_dir()
+            got_dir = config.data_dir()
         finally:
             if old is None:
                 os.environ.pop(config.DATA_ENV, None)
             else:
                 os.environ[config.DATA_ENV] = old
-        check(f"{config.DATA_ENV} 가 목록 자리를 바꾼다", got == want, got)
+        check(f"{config.DATA_ENV} 가 목록 자리를 바꾼다", got_dir == want_dir, got_dir)
     check("환경변수를 지우면 원래대로", config.data_dir() == ROOT, config.data_dir())
-
 
     # PE 인증서 테이블을 읽는 오프셋 계산. 이게 틀리면 서명 없는 python.exe 를
     # '서명 있다' 로 통과시켜 묶음의 존재 이유가 사라진다. 합성 PE 로 확인한다.

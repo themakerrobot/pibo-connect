@@ -28,10 +28,12 @@ def utf8_console(*streams) -> None:
 
 
 class Server:
-    def __init__(self, cmd: List[str], log_path: Path, cwd: Optional[str] = None):
+    def __init__(self, cmd: List[str], log_path: Path, cwd: Optional[str] = None,
+                 env: Optional[dict] = None):
         self.cmd = cmd
         self.log_path = log_path
         self.cwd = cwd
+        self.env = env
         self.proc: Optional[subprocess.Popen] = None
         self.port: Optional[int] = None
         self.base = ""
@@ -44,7 +46,8 @@ class Server:
         # POSIX 는 새 세션으로 띄워 그룹째, 윈도우는 taskkill /T 로 트리째 죽인다.
         kw = {} if os.name == "nt" else {"start_new_session": True}
         self.proc = subprocess.Popen(self.cmd, stdout=self._fh,
-                                     stderr=subprocess.STDOUT, cwd=self.cwd, **kw)
+                                     stderr=subprocess.STDOUT, cwd=self.cwd,
+                                     env=self.env, **kw)
         return self
 
     def __exit__(self, *exc) -> None:

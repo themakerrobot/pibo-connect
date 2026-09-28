@@ -2,17 +2,22 @@
 
     python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip
 
-선생님이 하는 그대로 한다 — zip 을 임시 폴더에 풀고, 그 폴더에서 켠다.
+선생님이 하는 그대로 한다 — zip 을 임시 폴더에 풀고, 그 폴더의 런처를 누른다.
 빌드 폴더에 남아 있던 것에 기대고 있으면 여기서 걸린다.
 
-세 가지를 본다.
-  1. python.exe 에 PSF 서명이 남아 있나 (이 묶음의 존재 이유다)
-  2. python\python.exe -m pibo_connector 가 뜨나 (._pth 와 의존성)
-  3. 시작하기.bat 이 뜨나 + 목록을 묶음 옆 data\ 에 두나 (런처)
+보는 것
+  1. 런처와 python.exe 에 PSF 서명이 남아 있나. 이 묶음의 존재 이유다 —
+     스마트 앱 컨트롤은 서명 없는 프로그램도, 출처 불명 .bat 도 막는다.
+     그래서 켜는 버튼이 '이름만 바꾼 서명된 python.exe' 여야 한다
+  2. 묶음 안에 스크립트 켜는 버튼이 남아 있지 않나 (루트에 .bat 금지)
+  3. 런처에 -m pibo_connector 를 줘서 뜨나 (._pth 와 의존성)
+  4. 런처를 그냥 눌렀을 때 뜨나 (app/sitecustomize.py 자동 시작)
+     + 목록을 묶음 옆 data\ 에 두나
 """
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 import zipfile
@@ -22,8 +27,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "build"))
 
-from make_portable import BUNDLE, PY_TAG, verify_signature   # noqa: E402
-from tests._launch import Server, utf8_console               # noqa: E402
+from make_portable import (BUNDLE, LAUNCH_CHECK, LAUNCH_RUN, LAUNCHERS,  # noqa: E402
+                           PY_TAG, blob_names_signer, pe_cert_blob,
+                           verify_signature)
+from tests._launch import Server, utf8_console                          # noqa: E402
 
 PAGES = (("/", "파이보 커넥터"), ("/static/app.js", ""),
          ("/static/maker-ui.css", "--paper"),
@@ -31,10 +38,10 @@ PAGES = (("/", "파이보 커넥터"), ("/static/app.js", ""),
          ("/static/img/pibo-logo.png", ""), ("/favicon.ico", ""))
 
 
-def serve(cmd, cwd: Path, log: Path, timeout: float, label: str) -> tuple:
+def serve(cmd, cwd: Path, log: Path, timeout: float, label: str, env=None) -> tuple:
     """띄워서 /api/info 와 화면을 받아 본다. (info, 실패목록)"""
     fails = []
-    with Server(cmd, log, cwd=str(cwd)) as srv:
+    with Server(cmd, log, cwd=str(cwd), env=env) as srv:
         info, died = srv.wait_ready(timeout)
         if info is None:
             print(f"!! {label}: " + (f"그냥 끝났다 (exit {srv.proc.returncode})" if died
@@ -84,8 +91,8 @@ def main() -> int:
     print(f"풀린 곳: {root}  ({len(names)}개 파일)")
 
     fails = []
-    for need in ("시작하기.bat", "로봇 확인하기.bat", "먼저-읽어보세요.txt",
-                 "python/python.exe", f"python/python{PY_TAG}._pth",
+    for need in (*LAUNCHERS, "먼저-읽어보세요.txt", "python.exe", "python311.dll",
+                 f"python{PY_TAG}._pth", "app/sitecustomize.py",
                  "app/pibo_connector/static/app.js", "app/examples"):
         if not (root / need).exists():
             print(f"!! 묶음에 없다: {need}")
@@ -93,26 +100,35 @@ def main() -> int:
     if fails:
         print("실패: " + ", ".join(fails))
         return 1
+    print("ok  런처·런타임·앱이 다 있다")
 
-    # .bat 에 한글이 들어가면 한글 안 쓰는 윈도우에서 깨진다. ASCII 만 허용한다.
-    for bat in root.glob("*.bat"):
-        raw = bat.read_bytes()
-        if raw[:3] == b"\xef\xbb\xbf":
-            print(f"!! {bat.name} 에 BOM 이 있다 — cmd.exe 가 첫 줄을 못 읽는다")
-            fails.append(f"{bat.name}/BOM")
+    # 켜는 버튼이 스크립트면 SAC 가 막는다. 루트에 .bat 이 있으면 안 된다.
+    stray = sorted(p.name for p in root.glob("*.bat"))
+    if stray:
+        print(f"!! 루트에 .bat 이 있다 — SAC 가 막는다: {stray}")
+        fails.append("루트 .bat")
+    else:
+        print("ok  루트에 스크립트 켜는 버튼이 없다")
+
+    # ._pth 에 줄 끝 \r 이 남으면 sys.path 에 'app\r' 이 들어가 조용히 깨진다.
+    pth = (root / f"python{PY_TAG}._pth").read_bytes()
+    if b"\r" in pth:
+        print("!! ._pth 에 CR 이 있다")
+        fails.append("._pth/CR")
+    elif b"import site" not in pth:
+        print("!! ._pth 에 import site 가 없다 — sitecustomize 가 안 불린다")
+        fails.append("._pth/site")
+    else:
+        print("ok  ._pth 가 LF 이고 import site 가 있다")
+
+    print("\n서명 확인")
+    for name in ("python.exe", *LAUNCHERS):
         try:
-            raw.decode("ascii")
-            print(f"ok  {bat.name} 은 ASCII 다")
-        except UnicodeDecodeError as ex:
-            print(f"!! {bat.name} 에 ASCII 아닌 글자가 있다: {ex}")
-            fails.append(f"{bat.name}/ascii")
-
-    print("\n서명 확인 (풀린 묶음의 python.exe)")
-    try:
-        verify_signature(root / "python" / "python.exe")
-    except SystemExit as ex:
-        print(f"!! {ex}")
-        fails.append("서명")
+            print(f"  · {name}")
+            verify_signature(root / name)
+        except SystemExit as ex:
+            print(f"!! {ex}")
+            fails.append(f"서명/{name}")
 
     if sys.platform != "win32":
         print("\n(윈도우가 아니라 기동 시험은 생략한다 — 묶음 안의 python.exe 는 윈도우용이다)")
@@ -123,24 +139,27 @@ def main() -> int:
         return 0
 
     log = Path(tempfile.gettempdir())
-    # 실행 파일은 **절대경로**로 준다. 윈도우의 CreateProcess 는 상대 실행 파일을
-    # Popen 의 cwd= 가 아니라 이 프로세스의 현재 폴더 기준으로 찾는다 — 상대경로로
-    # 주면 WinError 2 다. 묶음 안의 파이썬을 쓰는지는 경로 자체가 보증한다.
-    py = root / "python" / "python.exe"
-    print(f"\n1) {py} -m pibo_connector")
-    _, f1 = serve([str(py), "-m", "pibo_connector", "--no-browser"],
-                  root, log / "portable_py.log", args.timeout, "python.exe")
+    # 실행 파일은 절대경로로 준다. 윈도우의 CreateProcess 는 상대 실행 파일을
+    # Popen 의 cwd= 가 아니라 이 프로세스의 현재 폴더 기준으로 찾는다.
+    runner = root / LAUNCH_RUN
+
+    # 1) 인자를 주는 길. ._pth 와 의존성이 맞는지 본다 (sitecustomize 는 빠진다).
+    print(f"\n1) {LAUNCH_RUN} -m pibo_connector")
+    _, f1 = serve([str(runner), "-m", "pibo_connector", "--no-browser"],
+                  root, log / "portable_m.log", args.timeout, "-m 으로")
     fails += f1
 
-    print("\n2) 시작하기.bat")
-    # .bat 은 스스로 cd /d "%~dp0" 하므로 cwd 와 무관하지만, 찾는 쪽도 절대경로로.
-    info, f2 = serve(["cmd", "/c", str(root / "시작하기.bat"), "--no-browser"],
-                     root, log / "portable_bat.log", args.timeout, "시작하기.bat")
+    # 2) 선생님이 하는 길 — 인자 없이 두 번 누르기. sitecustomize 가 띄운다.
+    #    브라우저는 열지 않게 환경변수로 말한다 (.bat 이 없어졌으니 이 길밖에 없다).
+    print(f"\n2) {LAUNCH_RUN} (두 번 누르기)")
+    env = dict(os.environ, PIBO_CONNECT_NO_BROWSER="1")
+    env.pop("PIBO_CONNECT_DATA", None)
+    info, f2 = serve([str(runner)], root, log / "portable_click.log",
+                     args.timeout, "두 번 누르기", env=env)
     fails += f2
     if info:
         # 목록은 묶음 폴더 옆 data\ 에 남아야 한다. 다음 버전으로 바꿔도 안 날아가게.
-        got = Path(info.get("data_dir", ""))
-        want = root / "data"
+        got, want = Path(info.get("data_dir", "")), root / "data"
         if got.resolve() == want.resolve():
             print(f"ok  목록 자리 = {got}")
         else:
@@ -150,7 +169,7 @@ def main() -> int:
     if fails:
         print("\n실패: " + ", ".join(fails))
         return 1
-    print("\n묶음 정상 — 이 zip 은 파이썬 없는 PC 에서 켜진다")
+    print(f"\n묶음 정상 — [{LAUNCH_RUN}] 두 번 누르면 켜진다")
     return 0
 
 

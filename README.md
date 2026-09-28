@@ -22,7 +22,7 @@
 
 | 노트북 | 파일 | |
 |---|---|---|
-| **Windows** | **`pibo-connect-windows-portable.zip`** | 교실 배포용. 압축을 풀고 `시작하기` 를 두 번 누른다 |
+| **Windows** | **`pibo-connect-windows-portable.zip`** | 교실 배포용. 압축을 풀고 `1. 파이보 커넥터 시작` 을 두 번 누른다 |
 | Windows | `pibo-connect-windows.exe` | 파일 하나. PC 에 따라 스마트 앱 컨트롤이 막는다 |
 | Linux | `pibo-connect-linux` | `chmod +x` 후 실행 |
 | macOS | `pibo-connect-macos` | `chmod +x`, 첫 실행은 우클릭 → 열기 |
@@ -34,16 +34,29 @@
 
 ```
 pibo-connect/
-  시작하기.bat            켜는 버튼 (ASCII 만 — 아래 참고)
-  로봇 확인하기.bat        안 찾아질 때 --check
+  1. 파이보 커넥터 시작.exe   python.exe 복사본 (PSF 서명). 이걸 누른다
+  2. 로봇 확인하기.exe        안 찾아질 때 --check
   먼저-읽어보세요.txt
-  python/                 공식 embeddable (PSF 서명). 여기만 실행된다
-  app/                    pibo_connector/ · examples/ · lib/(의존성)
-  data/                   찾은 로봇 목록 (처음 켤 때 생긴다)
+  python.exe  python311.dll  python311.zip  *.pyd ...   공식 배포본 그대로
+  python311._pth              sys.path 를 app 과 app/lib 로 고정
+  app/                        sitecustomize.py · pibo_connector/ · examples/ · lib/
+  data/                       찾은 로봇 목록 (처음 켤 때 생긴다)
 ```
 
-다음 버전으로 올릴 때 `python/` 과 `app/` 만 덮어쓰면 `data/` 의 로봇 목록이 남는다
-(`시작하기.bat` 이 `PIBO_CONNECT_DATA` 를 묶음 옆 `data\` 로 준다).
+**켜는 버튼이 `.bat` 이 아니라 `.exe` 인 이유**: 처음엔 `시작하기.bat` 으로 냈는데
+실기에서 SAC 가 그것도 막았다. SAC 는 서명 없는 프로그램만이 아니라 **출처 불명
+스크립트(`.bat` 포함)** 도 막는다. 그래서 스크립트를 아예 쓰지 않는다 — 켜는 버튼은
+`python.exe` 를 복사해 이름만 바꾼 것이고(Authenticode 서명은 파일 내용에 붙으므로
+개명해도 PSF 서명이 유효하다), 두 번 누르면 `app/sitecustomize.py` 가 `site` 초기화
+때 자동으로 import 되어 커넥터를 띄운다. 무엇을 할지는 실행 파일 이름으로 가른다
+(`확인` 이 들어 있으면 `--check`). 결과적으로 묶음 안에서 실행되는 PE 는 전부 PSF 가
+서명한 것이고, 우리 것은 `.py` 텍스트뿐이다.
+
+embeddable 은 루트에 펼친 그대로 둔다 — `python311.dll` 은 실행 파일 옆에 있어야
+하고, `.pyd` 가 딸린 DLL(`libssl-3`, `libffi-8`, `sqlite3`)도 같은 폴더에서 찾는다.
+
+다음 버전으로 올릴 때 `data/` 만 남기고 덮어쓰면 로봇 목록이 남는다
+(`sitecustomize.py` 가 `PIBO_CONNECT_DATA` 를 실행 파일 옆 `data\` 로 준다).
 
 `nightly` 는 `main` 이 바뀔 때마다 자동으로 덮어써진다. 수업에 쓸 거면
 버전 태그가 붙은 정식 릴리스를 받는 쪽이 낫다.
@@ -200,6 +213,8 @@ exe 에는 버전 정보(회사 Circulus · 제품 파이보 커넥터 · 버전
 
 **"스마트 앱 컨트롤이 차단"** (Windows 11) — exe 로는 못 넘어간다. 끄면 재설치
 전엔 다시 켤 수 없다. **`pibo-connect-windows-portable.zip` 을 주면 된다.**
+SAC 는 `.bat` 도 막으므로(실기 확인) 그 묶음에는 스크립트 켜는 버튼이 없다.
+`tests/portable_smoke.py` 가 루트에 `.bat` 이 없는지 매번 확인한다.
 
 SAC 는 파일 내용을 보지 않고 그 파일의 sha256 을 Microsoft 클라우드에 물어
 '세상에서 본 적 있나' 로 판정한다. 서명이 없으면 빌드마다 해시가 새것이라 평판이
@@ -225,10 +240,11 @@ Authenticode 서명이 되어 있다. 우리 코드는 `.py` 텍스트로만 들
 실측: `python-3.11.9-embed-amd64.zip` 의 `python.exe` 는 `Authenticode 12056 bytes`
 서명을 갖고 있다 (CI 로그에서 확인).
 
-`.bat` 은 **ASCII 만 쓴다.** cmd.exe 는 배치 파일을 콘솔 코드페이지로 읽어서, UTF-8
-한글을 넣으면 `chcp 65001` 을 먼저 해도 깨진다 (한글 안 쓰는 윈도우에서 특히).
-선생님이 보는 한글은 전부 파이썬이 찍는다. `tests/smoke.py` 가 `.bat` 이 ASCII 인지,
-BOM 이 없는지 매번 확인한다.
+남아 있는 `.bat`(개발자용 `app/run-with-options.bat`) 은 **ASCII 만 쓴다.** cmd.exe 는
+배치 파일을 콘솔 코드페이지로 읽어서, UTF-8 한글을 넣으면 `chcp 65001` 을 먼저 해도
+깨진다 (한글 안 쓰는 윈도우에서 특히). 콘솔 코드페이지는 이제 파이썬이
+`SetConsoleOutputCP(65001)` 로 직접 바꾼다 (`__main__._utf8_console`) — exe 도 같이
+덕을 본다. 한글 안내는 전부 파이썬이 찍는다.
 
 근본 해결은 **코드 서명**이다. 인증서(.pfx)가 생기면 리포 secret 두 개만 넣으면
 CI 가 윈도우 빌드에 자동으로 서명한다 (`.github/workflows/release.yml`):

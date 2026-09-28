@@ -18,12 +18,25 @@ from . import __version__, config
 
 
 def _utf8_console() -> None:
-    """윈도우 콘솔이 cp1252/cp949 여도 한글 출력에 죽지 않게 한다.
+    """윈도우 콘솔에서 한글이 죽지도, 깨지지도 않게 한다.
 
-    영어권 윈도우의 기본 코드페이지는 cp1252 다. 여기에 한글을 찍으면
-    UnicodeEncodeError 로 프로세스가 통째로 끝난다 — 실행 파일이 첫 줄에서
-    죽는다는 뜻이다. errors='replace' 로 물러나게 해둔다.
+    두 가지가 다른 문제다.
+    - 죽는 것: 영어권 윈도우의 기본 코드페이지는 cp1252 다. 여기에 한글을
+      찍으면 UnicodeEncodeError 로 프로세스가 통째로 끝난다 — 실행 파일이
+      첫 줄에서 죽는다는 뜻이다. errors='replace' 로 물러나게 해둔다.
+    - 깨지는 것: 우리가 UTF-8 바이트를 내보내도 콘솔이 cp949/cp437 로
+      읽으면 글자가 뭉개진다. 예전에는 시작하기.bat 의 chcp 65001 이 이걸
+      맡았는데, 스마트 앱 컨트롤이 .bat 을 막아 그 버튼을 없앴다.
+      이제 SetConsoleOutputCP 로 직접 바꾼다.
     """
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            k = ctypes.windll.kernel32
+            k.SetConsoleOutputCP(65001)
+            k.SetConsoleCP(65001)
+        except Exception:
+            pass          # 콘솔이 없는 경우(pythonw 등). 아래 설정만으로도 된다
     for stream in (sys.stdout, sys.stderr):
         try:
             stream.reconfigure(encoding="utf-8", errors="replace")
