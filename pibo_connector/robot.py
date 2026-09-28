@@ -66,7 +66,7 @@ async def remote_wifi_scan(session: aiohttp.ClientSession, ip: str,
 
 
 async def find_ide_port(ip: str, timeout: float = 0.6) -> Optional[int]:
-    """IDE 가 열려 있는 포트. 신형 80, 구형(240701v1) 50000. 없으면 None.
+    """IDE 가 열려 있는 포트. 신형 80, 2024년 판 50000. 없으면 None.
 
     TCP 접속만 해보므로 싸다 — 신형 교실에서는 80 이 바로 열려 두 번째는 안 간다.
     """

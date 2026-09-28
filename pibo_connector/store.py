@@ -25,7 +25,7 @@ FIELDS = (
     "sn", "name", "ip", "mac", "kind", "kind_confidence", "kind_evidence",
     "os", "temp", "uptime", "mem_total", "mem_avail", "ssid",
     "mode", "last_seen", "note",
-    "ide_port",          # 신형 80, 구형(240701v1) 50000. 찾을 때 확인한 값
+    "ide_port",          # 신형 80, 2024년 판 50000. 찾을 때 확인한 값
 )
 
 BLOCKED = ("psk", "password", "pw", "key", "secret")
