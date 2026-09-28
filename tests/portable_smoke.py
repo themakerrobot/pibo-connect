@@ -27,9 +27,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "build"))
 
-from make_portable import (BUNDLE, LAUNCH_CHECK, LAUNCH_RUN, LAUNCHERS,  # noqa: E402
-                           PY_TAG, blob_names_signer, pe_cert_blob,
-                           verify_signature)
+from make_portable import (APP_DIR, BUNDLE, LAUNCH_RUN, LAUNCHERS,  # noqa: E402
+                           PY_TAG, RUNTIME_DIR, verify_signature)
 from tests._launch import Server, utf8_console                          # noqa: E402
 
 PAGES = (("/", "파이보 커넥터"), ("/static/app.js", ""),
@@ -91,9 +90,12 @@ def main() -> int:
     print(f"풀린 곳: {root}  ({len(names)}개 파일)")
 
     fails = []
-    for need in (*LAUNCHERS, "먼저-읽어보세요.txt", "python.exe", "python311.dll",
-                 f"python{PY_TAG}._pth", "app/sitecustomize.py",
-                 "app/pibo_connector/static/app.js", "app/examples"):
+    # python311.dll 은 실행 파일 옆(루트)에 있어야 한다. 옮기면 안 켜진다.
+    for need in (*LAUNCHERS, "먼저-읽어보세요.txt", f"python{PY_TAG}.dll",
+                 f"python{PY_TAG}._pth",
+                 f"{APP_DIR}/{RUNTIME_DIR}/python{PY_TAG}.zip",
+                 f"{APP_DIR}/sitecustomize.py",
+                 f"{APP_DIR}/pibo_connector/static/app.js", f"{APP_DIR}/examples"):
         if not (root / need).exists():
             print(f"!! 묶음에 없다: {need}")
             fails.append(need)
@@ -102,13 +104,23 @@ def main() -> int:
         return 1
     print("ok  런처·런타임·앱이 다 있다")
 
-    # 켜는 버튼이 스크립트면 SAC 가 막는다. 루트에 .bat 이 있으면 안 된다.
-    stray = sorted(p.name for p in root.glob("*.bat"))
-    if stray:
-        print(f"!! 루트에 .bat 이 있다 — SAC 가 막는다: {stray}")
-        fails.append("루트 .bat")
+    # 선생님이 보는 건 런처와 읽을거리뿐이어야 한다. 루트에 exe 가 더 있으면
+    # (예: 원본 python.exe) 무엇을 눌러야 할지 헷갈린다.
+    exes = sorted(f.name for f in root.glob("*.exe"))
+    if exes != sorted(LAUNCHERS):
+        print(f"!! 루트의 exe 가 런처 둘이 아니다: {exes}")
+        fails.append("루트 exe")
     else:
-        print("ok  루트에 스크립트 켜는 버튼이 없다")
+        print(f"ok  루트의 exe 는 런처 둘뿐이다 ({len(list(root.glob('*')))}개 항목)")
+
+    # 스크립트는 SAC 가 막는다 (실기 확인). 묶음 어디에도 있으면 안 된다.
+    stray = sorted(str(f.relative_to(root)) for f in root.rglob("*.bat"))
+    stray += sorted(str(f.relative_to(root)) for f in root.rglob("*.cmd"))
+    if stray:
+        print(f"!! 묶음에 스크립트가 있다 — SAC 가 막는다: {stray}")
+        fails.append("스크립트")
+    else:
+        print("ok  묶음에 .bat/.cmd 가 하나도 없다")
 
     # ._pth 에 줄 끝 \r 이 남으면 sys.path 에 'app\r' 이 들어가 조용히 깨진다.
     pth = (root / f"python{PY_TAG}._pth").read_bytes()
@@ -122,7 +134,7 @@ def main() -> int:
         print("ok  ._pth 가 LF 이고 import site 가 있다")
 
     print("\n서명 확인")
-    for name in ("python.exe", *LAUNCHERS):
+    for name in LAUNCHERS:
         try:
             print(f"  · {name}")
             verify_signature(root / name)

@@ -42,17 +42,25 @@ Python Software Foundation 이름으로 Authenticode 서명이 되어 있다.
       1. 파이보 커넥터 시작.exe   ← python.exe 복사본 (PSF 서명). 이걸 누른다
       2. 로봇 확인하기.exe        ← 같은 복사본. 안 찾아질 때 --check
       먼저-읽어보세요.txt
-      python.exe  python311.dll  python311.zip  *.pyd ...  ← 공식 배포본 그대로
-      python311._pth              ← sys.path 를 app 과 app/lib 로 고정
+      python311.dll  python3.dll  vcruntime140*.dll   ← 옮길 수 없는 것들
+      python311._pth              ← sys.path 를 app 아래로 고정
       app/
+        runtime/                  ← python311.zip, *.pyd, libssl-3 …
         sitecustomize.py          ← 두 번 눌렀을 때 커넥터를 띄우는 곳
         pibo_connector/           ← static/ 포함
         examples/
         lib/                      ← 의존성 (pip --target)
+      data/                       ← 찾은 로봇 목록 (처음 켤 때)
 
-embeddable 은 **한 폴더에 펼친 그대로** 둔다. python311.dll 은 exe 옆에
-있어야 하고, 확장 모듈(.pyd) 이 딸린 DLL(libssl 등) 도 같은 폴더에서 찾는다.
-보기엔 파일이 많아도, 옮겨서 얻는 건 없고 잃을 건 많다.
+선생님 눈에는 런처 둘과 읽을거리만 보여야 한다. 그래서 embeddable 을 app/runtime
+으로 넣고, 옮길 수 없는 것만 루트에 남긴다 — python3*.dll 은 실행 파일의 import
+table 이 이름으로 옆에서 찾고, vcruntime*.dll 은 그 DLL 이 쓴다. python311.zip 과
+.pyd 는 ._pth 로 자리를 알려주면 되고, .pyd 에 딸린 DLL(libssl-3, libcrypto-3,
+libffi-8, sqlite3)은 확장 모듈이 LOAD_WITH_ALTERED_SEARCH_PATH 로 불리는 덕에
+그 .pyd 와 같은 폴더에서 찾아진다. tests/portable_smoke.py 가 실제로 켜 본다.
+
+.bat 은 묶음에 하나도 없다. SAC 가 막는 종류를 아예 두지 않는다. 옵션을 주려면
+검은 창에서 "1. 파이보 커넥터 시작.exe" -m pibo_connector --host 0.0.0.0 처럼 쓴다.
 
 경로 대응은 소스 실행(frozen=False) 과 같다:
     app/pibo_connector/static  = config.static_dir()
@@ -83,7 +91,20 @@ EMBED_URL = f"https://www.python.org/ftp/python/{PY_VER}/python-{PY_VER}-embed-a
 
 BUNDLE = "pibo-connect"          # zip 안 최상위 폴더 이름
 APP_DIR = "app"
-LIB_DIR = "lib"                  # app/lib
+RUNTIME_DIR = "runtime"          # app/runtime — embeddable 중 루트에 안 남는 것들
+LIB_DIR = "lib"                  # app/lib — 의존성
+
+# 루트에 남겨야 하는 것. 여기 있는 것만 밖에 나온다.
+#   python3*.dll   : 실행 파일의 import table 이 이름으로 찾는다. 옆에 없으면
+#                    "python311.dll 을 찾을 수 없습니다" 로 안 켜진다.
+#                    python3.dll(stable ABI forwarder)도 같이 둔다 — abi3 휠이
+#                    이걸 링크하는 경우가 있고, 66KB 아끼자고 걸 이유가 없다.
+#   vcruntime*.dll : python311.dll 이 쓰는 C 런타임. 탐색이 실행 파일 폴더에서
+#                    시작하므로 이것도 옆에 있어야 한다.
+# 나머지(python311.zip, *.pyd, libssl-3, libcrypto-3, libffi-8, sqlite3, 카탈로그)
+# 는 app/runtime 으로 들어간다. .pyd 에 딸린 DLL 은 그 .pyd 와 같은 폴더에서
+# 찾으므로(확장 모듈은 LOAD_WITH_ALTERED_SEARCH_PATH 로 불린다) 같이 옮기면 된다.
+ROOT_KEEP = ("python3*.dll", "vcruntime*.dll")
 
 # 켜는 버튼. python.exe 를 복사해 이 이름으로 둔다 (서명은 이름과 무관하다).
 # 앞에 번호를 붙이는 건 탐색기에서 맨 위에 오게 하려는 것이다.
@@ -95,30 +116,17 @@ LAUNCHERS = (LAUNCH_RUN, LAUNCH_CHECK)
 # ._pth — 실행 파일이 있는 폴더(= 묶음 루트) 기준 상대경로다.
 # 'import site' 를 넣어야 app/sitecustomize.py 가 불리고, lib 의 .pth 처리와
 # importlib.metadata 도 정상이 된다. 이 줄이 없으면 두 번 눌러도 안 켜진다.
+# 파일 이름은 DLL 이름 기준(python311._pth) 하나만 쓴다. 표준 배포본이 그렇게
+# 쓰고, python311.dll 이 루트에 있으므로 런처 이름이 무엇이든 찾아진다.
 PTH_LINES = [
-    f"python{PY_TAG}.zip",
-    ".",
+    f"{APP_DIR}\\{RUNTIME_DIR}\\python{PY_TAG}.zip",
+    f"{APP_DIR}\\{RUNTIME_DIR}",
     APP_DIR,
     f"{APP_DIR}\\{LIB_DIR}",
+    ".",
     "",
     "import site",
 ]
-
-# 개발자·고급 사용자용. 선생님 눈에 안 띄게 app/ 안에 둔다. 켜는 버튼이 아니다.
-# (SAC 가 막을 수 있는 건 이 파일이고, 아무도 이걸 누르지 않아도 묶음은 돈다.)
-OPTIONS_BAT = r"""@echo off
-rem Run the connector with extra options. ASCII-ONLY: cmd.exe reads a .bat in
-rem the console codepage, which differs per PC, so Korean here would garble.
-rem Normal use does not need this file - double-click the .exe in the folder
-rem above instead. Smart App Control may block this script; the .exe is not
-rem a script and is signed by the Python Software Foundation.
-rem   example:  run-with-options.bat --host 0.0.0.0
-setlocal
-cd /d "%~dp0.."
-set "PIBO_CONNECT_DATA=%~dp0..\data"
-"python.exe" -m pibo_connector %*
-pause
-"""
 
 README_TXT = """파이보 커넥터 — 풀어서 쓰는 묶음 (버전 {ver})
 
@@ -150,13 +158,10 @@ README_TXT = """파이보 커넥터 — 풀어서 쓰는 묶음 (버전 {ver})
       켜는 버튼이에요. 이것만 누르면 돼요.
   {check}
       로봇 한 대를 짚어 보는 버튼이에요.
-  app\\
-      커넥터 프로그램이 들어 있어요.
   data\\
       찾은 로봇 목록이에요 (처음 켤 때 생겨요).
-  그 밖의 파일들
-      python.org 가 배포하는 공식 파이썬이에요. 그대로 넣었어요.
-      건드리지 않아도 되고, 지우면 안 켜져요.
+  app\\  그리고 이름이 어려운 파일들
+      프로그램이 쓰는 것들이에요. 안 건드려도 되고, 지우면 안 켜져요.
 
   다음 버전으로 바꿀 때는 data\\ 만 남겨 두고 나머지를 덮어쓰면
   찾아둔 로봇 목록이 그대로예요.
@@ -361,35 +366,41 @@ def write_text(path: Path, text: str, bom: bool = False, crlf: bool = True) -> N
 
 
 def build_tree(dest: Path, cache: Path) -> Path:
-    """dest 아래에 pibo-connect/ 를 만들고 그 경로를 돌려준다."""
+    """dest 아래에 pibo-connect/ 를 만들고 그 경로를 돌려준다.
+
+    선생님 눈에 보이는 건 런처 두 개와 읽을거리뿐이어야 한다. 나머지는
+    app/ 안으로 넣는다. 다만 python3*.dll 과 vcruntime*.dll 은 옮길 수 없다 —
+    실행 파일이 이름으로 옆에서 찾는다. ROOT_KEEP 참고.
+    """
     root = dest / BUNDLE
     if root.exists():
         shutil.rmtree(root)
-    root.mkdir(parents=True)
+    app = root / APP_DIR
+    runtime = app / RUNTIME_DIR
+    runtime.mkdir(parents=True)
 
-    # embeddable 은 루트에 그대로 펼친다. python311.dll 은 실행 파일 옆에
-    # 있어야 하고, .pyd 가 딸린 DLL(libssl-3, libffi-8, sqlite3) 도 같은
-    # 폴더에서 찾는다. 나누면 얻는 것 없이 깨질 구멍만 생긴다.
+    # 일단 runtime 에 통째로 푼 뒤, 루트에 있어야 하는 것만 올린다.
     with zipfile.ZipFile(fetch_embed(cache)) as z:
-        z.extractall(root)
-    exe = root / "python.exe"
+        z.extractall(runtime)
+    exe = runtime / "python.exe"
     if not exe.exists():
         raise SystemExit("!! embeddable 안에 python.exe 가 없다")
     verify_signature(exe)
 
-    # 기본 ._pth 를 우리 것으로 바꾼다. sys.path 가 여기서 정해진다.
-    # 이름은 셋 다 쓴다 — CPython 은 실행 파일 이름 기준과 DLL 이름 기준을
-    # 모두 보는데, 런처 이름을 바꿔 두었으므로 어느 쪽이 먼저든 맞게 한다.
-    # 없으면 두 번 눌러도 app/sitecustomize.py 를 못 찾아 안 켜진다.
-    for old_pth in root.glob("python*._pth"):
-        old_pth.unlink()
-    body = "\n".join(PTH_LINES) + "\n"
-    for name in (f"python{PY_TAG}._pth",
-                 *(Path(x).stem + "._pth" for x in LAUNCHERS)):
-        write_text(root / name, body, crlf=False)
+    moved = []
+    for pat in ROOT_KEEP:
+        for f in sorted(runtime.glob(pat)):
+            shutil.move(str(f), str(root / f.name))
+            moved.append(f.name)
+    if not any(n.lower() == f"python{PY_TAG}.dll" for n in moved):
+        raise SystemExit(f"!! python{PY_TAG}.dll 을 루트로 못 올렸다 — {moved}")
+    print(f"  루트 DLL  : {', '.join(moved)}")
 
-    app = root / APP_DIR
-    app.mkdir(parents=True)
+    # sys.path 를 우리 것으로. 표준 배포본이 넣어 둔 ._pth 는 버린다.
+    for old_pth in runtime.glob("python*._pth"):
+        old_pth.unlink()
+    write_text(root / f"python{PY_TAG}._pth", "\n".join(PTH_LINES) + "\n", crlf=False)
+
     copy_app(app)
     install_deps(app / LIB_DIR)
 
@@ -401,10 +412,13 @@ def build_tree(dest: Path, cache: Path) -> Path:
         ok, blob, detail = pe_cert_blob(root / name)
         if not (ok and blob_names_signer(blob)):
             raise SystemExit(f"!! 복사한 런처의 서명이 깨졌다: {name} — {detail}")
+    # 원본 python.exe/pythonw.exe 는 남기지 않는다. 옮긴 자리에서는 옆에
+    # python311.dll 이 없어 어차피 안 돌고, 폴더만 어지럽힌다.
+    for name in ("python.exe", "pythonw.exe"):
+        (runtime / name).unlink(missing_ok=True)
     print(f"  런처      : {', '.join(LAUNCHERS)}  (서명 그대로)")
 
     write_text(root / "먼저-읽어보세요.txt", README_TXT, bom=True)
-    write_text(app / "run-with-options.bat", OPTIONS_BAT)
     return root
 
 

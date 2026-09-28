@@ -240,15 +240,19 @@ def test_portable():
     check("examples 는 패키지의 부모 아래 (app/examples 가 맞는다)",
           config.examples_dir() == pkg.parent / "examples", config.examples_dir())
 
-    pth = mp.PTH_LINES
-    check("._pth 가 표준 라이브러리 zip 을 먼저 본다", pth[0] == f"python{mp.PY_TAG}.zip", pth)
-    check("._pth 에 app 이 있다", mp.APP_DIR in pth, pth)
-    check("._pth 에 app/lib 이 있다", f"{mp.APP_DIR}\\{mp.LIB_DIR}" in pth, pth)
+    pth, A, R, L = mp.PTH_LINES, mp.APP_DIR, mp.RUNTIME_DIR, mp.LIB_DIR
+    check("._pth 가 표준 라이브러리 zip 을 먼저 본다",
+          pth[0] == f"{A}\\{R}\\python{mp.PY_TAG}.zip", pth)
+    check("._pth 에 app/runtime 이 있다 (.pyd 가 거기 있다)", f"{A}\\{R}" in pth, pth)
+    check("._pth 에 app 이 있다 (pibo_connector·sitecustomize)", A in pth, pth)
+    check("._pth 에 app/lib 이 있다", f"{A}\\{L}" in pth, pth)
     # import site 가 없으면 sitecustomize 가 안 불려서 두 번 눌러도 안 켜진다.
     check("._pth 에 import site 가 있다", "import site" in pth, pth)
-    # 루트에 펼치므로 상대경로에 .. 가 있으면 안 된다.
-    check("._pth 에 .. 가 없다 (루트에 펼친다)",
-          not any(l.startswith("..") for l in pth), pth)
+    # ._pth 는 실행 파일(=루트) 기준이다. .. 로 올라갈 일이 없다.
+    check("._pth 에 .. 가 없다", not any(l.startswith("..") for l in pth), pth)
+    # 실행 파일 옆에 있어야 하는 것들. 옮기면 "python311.dll 을 찾을 수 없습니다" 다.
+    check("루트에 남기는 것이 DLL 두 종류뿐이다",
+          mp.ROOT_KEEP == ("python3*.dll", "vcruntime*.dll"), mp.ROOT_KEEP)
 
     # ── 켜는 버튼 ──
     check("켜는 버튼이 둘 다 .exe 다 (스크립트면 SAC 가 막는다)",
@@ -276,16 +280,13 @@ def test_portable():
             sys.argv = old_argv
         check(f"argv={argv} 일 때 자동 시작 {'함' if want else '안 함'}", got is want)
 
-    # 개발자용 .bat 은 app/ 안에만, ASCII 로.
-    try:
-        mp.OPTIONS_BAT.encode("ascii")
-        ascii_ok = True
-    except UnicodeEncodeError:
-        ascii_ok = False
-    check("run-with-options.bat 은 ASCII 다", ascii_ok,
-          "cmd.exe 가 읽는 코드페이지가 PC 마다 달라 한글은 깨진다")
-    check("run-with-options.bat 이 묶음 안 python.exe 를 쓴다",
-          '"python.exe" -m pibo_connector' in mp.OPTIONS_BAT)
+    # 스크립트는 묶는 쪽에서도 만들지 않는다. SAC 가 막는 종류를 두지 않는다.
+    # 주석·설명에는 .bat 이야기가 나오므로 '파일 이름' 문자열만 본다.
+    src = (ROOT / "build" / "make_portable.py").read_text(encoding="utf-8")
+    named = [n.value for n in ast.walk(ast.parse(src))
+             if isinstance(n, ast.Constant) and isinstance(n.value, str)
+             and n.value.lower().endswith((".bat", ".cmd"))]
+    check("묶는 코드가 만드는 파일 중 스크립트가 없다", not named, named)
 
     # 환경변수 우회가 실제로 먹는지. 안 먹으면 목록이 묶음 밖에 생긴다.
     import os

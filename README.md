@@ -37,9 +37,12 @@ pibo-connect/
   1. 파이보 커넥터 시작.exe   python.exe 복사본 (PSF 서명). 이걸 누른다
   2. 로봇 확인하기.exe        안 찾아질 때 --check
   먼저-읽어보세요.txt
-  python.exe  python311.dll  python311.zip  *.pyd ...   공식 배포본 그대로
-  python311._pth              sys.path 를 app 과 app/lib 로 고정
-  app/                        sitecustomize.py · pibo_connector/ · examples/ · lib/
+  python311.dll  python3.dll  vcruntime140*.dll   옮길 수 없는 것들 (아래)
+  python311._pth              sys.path 를 app 아래로 고정
+  app/
+    runtime/                  python311.zip · *.pyd · libssl-3 · sqlite3 …
+    sitecustomize.py          두 번 눌렀을 때 커넥터를 띄우는 곳
+    pibo_connector/  examples/  lib/
   data/                       찾은 로봇 목록 (처음 켤 때 생긴다)
 ```
 
@@ -52,8 +55,18 @@ pibo-connect/
 (`확인` 이 들어 있으면 `--check`). 결과적으로 묶음 안에서 실행되는 PE 는 전부 PSF 가
 서명한 것이고, 우리 것은 `.py` 텍스트뿐이다.
 
-embeddable 은 루트에 펼친 그대로 둔다 — `python311.dll` 은 실행 파일 옆에 있어야
-하고, `.pyd` 가 딸린 DLL(`libssl-3`, `libffi-8`, `sqlite3`)도 같은 폴더에서 찾는다.
+**루트에 무엇이 남는가**: 선생님 눈에는 런처 둘과 읽을거리만 보여야 하므로
+embeddable 은 `app/runtime` 으로 넣는다. 다만 `python3*.dll` 과 `vcruntime*.dll` 은
+옮길 수 없다 — 실행 파일의 import table 이 그 이름을 옆에서 찾고, 없으면
+"python311.dll 을 찾을 수 없습니다" 로 안 켜진다. `python311.zip` 과 `.pyd` 는
+`._pth` 로 자리를 알려주면 되고, `.pyd` 에 딸린 DLL(`libssl-3`, `libcrypto-3`,
+`libffi-8`, `sqlite3`)은 확장 모듈이 `LOAD_WITH_ALTERED_SEARCH_PATH` 로 불리는 덕에
+그 `.pyd` 와 같은 폴더에서 찾아진다. 루트 항목은 9개, 그중 실행 파일은 런처 둘뿐이고
+`tests/portable_smoke.py` 가 그 둘만 있는지 확인한다.
+
+**묶음에는 `.bat` 이 하나도 없다.** SAC 가 막는 종류를 아예 두지 않는다. 옵션을
+주려면 검은 창에서 `"1. 파이보 커넥터 시작.exe" -m pibo_connector --host 0.0.0.0`
+처럼 쓴다 (인자를 주면 `sitecustomize` 의 자동 시작은 빠진다).
 
 다음 버전으로 올릴 때 `data/` 만 남기고 덮어쓰면 로봇 목록이 남는다
 (`sitecustomize.py` 가 `PIBO_CONNECT_DATA` 를 실행 파일 옆 `data\` 로 준다).
@@ -213,8 +226,9 @@ exe 에는 버전 정보(회사 Circulus · 제품 파이보 커넥터 · 버전
 
 **"스마트 앱 컨트롤이 차단"** (Windows 11) — exe 로는 못 넘어간다. 끄면 재설치
 전엔 다시 켤 수 없다. **`pibo-connect-windows-portable.zip` 을 주면 된다.**
-SAC 는 `.bat` 도 막으므로(실기 확인) 그 묶음에는 스크립트 켜는 버튼이 없다.
-`tests/portable_smoke.py` 가 루트에 `.bat` 이 없는지 매번 확인한다.
+SAC 는 `.bat` 도 막으므로(실기 확인) 그 묶음에는 스크립트가 하나도 없다.
+`tests/portable_smoke.py` 가 묶음 전체에 `.bat`/`.cmd` 가 없는지 매번 확인한다.
+런처 두 개로 만든 묶음은 실기에서 차단 없이 켜졌다.
 
 SAC 는 파일 내용을 보지 않고 그 파일의 sha256 을 Microsoft 클라우드에 물어
 '세상에서 본 적 있나' 로 판정한다. 서명이 없으면 빌드마다 해시가 새것이라 평판이
@@ -240,11 +254,10 @@ Authenticode 서명이 되어 있다. 우리 코드는 `.py` 텍스트로만 들
 실측: `python-3.11.9-embed-amd64.zip` 의 `python.exe` 는 `Authenticode 12056 bytes`
 서명을 갖고 있다 (CI 로그에서 확인).
 
-남아 있는 `.bat`(개발자용 `app/run-with-options.bat`) 은 **ASCII 만 쓴다.** cmd.exe 는
-배치 파일을 콘솔 코드페이지로 읽어서, UTF-8 한글을 넣으면 `chcp 65001` 을 먼저 해도
-깨진다 (한글 안 쓰는 윈도우에서 특히). 콘솔 코드페이지는 이제 파이썬이
-`SetConsoleOutputCP(65001)` 로 직접 바꾼다 (`__main__._utf8_console`) — exe 도 같이
-덕을 본다. 한글 안내는 전부 파이썬이 찍는다.
+콘솔 코드페이지는 파이썬이 `SetConsoleOutputCP(65001)` 로 직접 바꾼다
+(`__main__._utf8_console`) — 예전엔 `.bat` 의 `chcp 65001` 이 하던 일이고, 묶음에서
+`.bat` 을 없애면서 옮겼다. exe 도 같이 덕을 본다 (한글 안 쓰는 윈도우에서 검은 창
+한글이 깨지던 것). 한글 안내는 전부 파이썬이 찍는다.
 
 근본 해결은 **코드 서명**이다. 인증서(.pfx)가 생기면 리포 secret 두 개만 넣으면
 CI 가 윈도우 빌드에 자동으로 서명한다 (`.github/workflows/release.yml`):
