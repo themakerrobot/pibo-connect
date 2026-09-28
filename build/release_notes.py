@@ -22,7 +22,7 @@ HOWTO = """### 받기
 
 | 노트북 | 받을 파일 | |
 |---|---|---|
-| **Windows** | **`pibo-connect-windows-portable.zip`** | **이걸 받으세요.** 압축을 풀고 `시작하기` 를 두 번 눌러요 |
+| **Windows** | **`pibo-connect-windows-portable.zip`** | **이걸 받으세요.** 압축을 풀고 `1. 파이보 커넥터 시작` 을 두 번 눌러요 |
 | Windows | `pibo-connect-windows.exe` | 파일 하나로 쓰고 싶을 때. PC 에 따라 "차단되었습니다" 가 뜰 수 있어요 |
 | macOS | `pibo-connect-macos` | 터미널에서 `chmod +x` 한 뒤, 첫 실행은 우클릭 → 열기 |
 | Linux | `pibo-connect-linux` | `chmod +x` 한 뒤 실행 |
