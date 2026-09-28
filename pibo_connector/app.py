@@ -332,20 +332,21 @@ def create_app(token: str = "") -> FastAPI:
                                      timeout=float(body.get("timeout") or 300))
 
     # ── 로봇의 파일 ─────────────────────────────────────────────────
-    def _ip_or_404(sn: str) -> str:
-        ip = fleet.ip_of((sn or "").lower())
+    def _target_or_404(sn: str):
+        """(ip, ide_port). 포트는 찾을 때 확인해 둔 값 — 구형은 50000 이다."""
+        ip, port = fleet.target_of((sn or "").lower())
         if not ip:
-            raise HTTPException(404, f"{sn}: IP 를 모른다. 먼저 [찾기]")
-        return ip
+            raise HTTPException(404, f"{sn}: IP 를 모른다. 먼저 [로봇 찾기]")
+        return ip, port
 
     @app.post("/api/browse")
     async def api_browse(request: Request, body: dict = Body(...)):
         """로봇 한 대의 폴더 목록. IDE 의 load_directory 를 그대로 쓴다."""
         check(request)
-        ip = _ip_or_404(body.get("sn"))
+        ip, ide_port = _target_or_404(body.get("sn"))
         path = (body.get("path") or config.ROBOT_HOME).strip() or config.ROBOT_HOME
         try:
-            async with robot.RobotLink(ip, timeout=8.0) as link:
+            async with robot.RobotLink(ip, timeout=8.0, port=ide_port) as link:
                 res = await link.list_dir(path)
                 # 목록을 보느라 IDE 의 작업 폴더가 바뀌었다. 실행 cwd 가
                 # 거기 따라가므로 원래 자리로 돌려둔다.
@@ -360,13 +361,13 @@ def create_app(token: str = "") -> FastAPI:
     async def api_load(request: Request, body: dict = Body(...)):
         """로봇 한 대에서 파일을 읽어온다. 편집기에 넣어 고친 뒤 전부에 밀어넣는 용도."""
         check(request)
-        ip = _ip_or_404(body.get("sn"))
+        ip, ide_port = _target_or_404(body.get("sn"))
         try:
             path = normalize_path(body.get("path") or "")
         except ValueError as ex:
             raise HTTPException(400, str(ex))
         try:
-            async with robot.RobotLink(ip, timeout=8.0) as link:
+            async with robot.RobotLink(ip, timeout=8.0, port=ide_port) as link:
                 code, filepath = await link.load_file(path)
         except Exception as ex:
             raise HTTPException(502, f"파일을 못 읽었다: {ex}")

@@ -50,6 +50,16 @@ def test_parse_system():
     d2 = robot.parse_system(["100000001cd488e95", "piBo_x"])
     check("짧은 배열도 안 터진다", d2["sn"] == "cd488e95" and d2["ip"] == "")
 
+    # 구형 240701v1 은 9칸이고 순서가 다르다: … WLAN0, SSID0, ETH1 (PSK 없음)
+    old = ["100000001cd488e95", "piBo_240701v1", "12345.6", "48.3'C",
+           "3900000", "2100000", "192.168.0.51", "classroom-5g", ""]
+    d3 = robot.parse_system(old)
+    check("구형 9칸: IP 가 wlan0", d3["ip"] == "192.168.0.51", d3)
+    check("구형 9칸: SSID 가 [7]", d3["ssid"] == "classroom-5g", d3)
+    old_eth = old[:6] + ["", "classroom-5g", "10.0.0.7"]
+    check("구형 9칸: wlan0 없으면 eth1 을 IP 로",
+          robot.parse_system(old_eth)["ip"] == "10.0.0.7")
+
 
 def test_detect():
     print("기종 판별 (OS_VERSION)")

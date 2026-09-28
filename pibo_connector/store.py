@@ -25,6 +25,7 @@ FIELDS = (
     "sn", "name", "ip", "mac", "kind", "kind_confidence", "kind_evidence",
     "os", "temp", "uptime", "mem_total", "mem_avail", "ssid",
     "mode", "last_seen", "note",
+    "ide_port",          # 신형 80, 구형(240701v1) 50000. 찾을 때 확인한 값
 )
 
 BLOCKED = ("psk", "password", "pw", "key", "secret")
@@ -85,6 +86,16 @@ class Fleet:
     def ip_of(self, sn: str) -> str:
         with _LOCK:
             return (self.robots.get(sn) or {}).get("ip", "")
+
+    def ide_port_of(self, sn: str) -> int:
+        """그 로봇의 IDE 포트. 모르면 신형 기본값."""
+        from . import config
+        with _LOCK:
+            return (self.robots.get(sn) or {}).get("ide_port") or config.IDE_PORT
+
+    def target_of(self, sn: str):
+        """(ip, ide_port). ip 가 없으면 ("", port)."""
+        return self.ip_of(sn), self.ide_port_of(sn)
 
     # ── 갱신 ────────────────────────────────────────────────────────
     def upsert(self, info: dict) -> dict:

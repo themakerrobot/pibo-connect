@@ -6,6 +6,10 @@ from pathlib import Path
 
 # 로봇 쪽 고정값 — 전부 openpibo-os.pibo 코드에서 확인한 값이다.
 IDE_PORT = 80        # ide/run_ide.py  (socket.io 서버)
+# 구형 OS(240701v1 까지)는 IDE 가 Node.js 다 — ide/main.js 를 인자 없이 띄우고,
+# main.js 의 포트 결정 줄이 process.argc(Node 에 없는 속성) 를 보는 탓에 늘 50000 이다.
+# 이벤트 이름과 형태는 신형과 같아서 포트만 맞추면 그대로 된다.
+IDE_PORT_LEGACY = 50000
 SYS_PORT = 8080      # system/booting.py
 TRIG_PORT = 50055    # 동시 시작 트리거용 UDP 포트 (커넥터가 직접 쏜다)
 

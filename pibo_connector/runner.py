@@ -130,13 +130,13 @@ class Runner:
 
     # ── 공통 ────────────────────────────────────────────────────────
     async def _open(self, job: Job, sn: str) -> Optional[robot.RobotLink]:
-        ip = self.fleet.ip_of(sn)
+        ip, ide_port = self.fleet.target_of(sn)
         if not ip:
             job.state[sn] = "no-ip"
             self.emit({"type": "run", "sn": sn, "state": "no-ip"})
             return None
         try:
-            link = robot.RobotLink(ip, timeout=10.0)
+            link = robot.RobotLink(ip, timeout=10.0, port=ide_port)
 
             def on_record(rec: str, _sn=sn, _job=job):
                 _job.records[_sn] = rec
@@ -275,11 +275,11 @@ class Runner:
                 job.task.cancel()
 
         async def one(sn: str):
-            ip = self.fleet.ip_of(sn)
+            ip, ide_port = self.fleet.target_of(sn)
             if not ip:
                 return sn, "no-ip"
             try:
-                async with robot.RobotLink(ip, timeout=5.0) as link:
+                async with robot.RobotLink(ip, timeout=5.0, port=ide_port) as link:
                     await link.stop()
                     await asyncio.sleep(0.3)
                 return sn, "stopped"

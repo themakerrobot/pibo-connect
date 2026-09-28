@@ -14,17 +14,25 @@ import socketio
 from aiohttp import web
 
 
-def build(sn: str, os_version: str, ip: str, with_device: bool):
+def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = False):
     sio = socketio.AsyncServer(async_mode="aiohttp", cors_allowed_origins="*")
     app80 = web.Application()
     sio.attach(app80, socketio_path="/socket.io")
 
-    # system/system.sh 의 echo 순서. 인덱스 9 는 PSK 평문이다 — 커넥터가
-    # 이걸 받고도 어디에도 남기지 않는지 보려고 일부러 넣는다.
-    system_row = [
-        "10000000" + sn, os_version, "12345.6", "48.3'C", "3900000", "2100000",
-        ip, "", "classroom-5g", "LeakCanary!234", "", "wpa-psk",
-    ]
+    # system/system.sh 의 echo 순서. 판마다 칸 수와 순서가 다르다.
+    if legacy:
+        # 구형 240701v1 (9칸): … WLAN0, SSID0, ETH1. PSK 칸이 아예 없다.
+        system_row = [
+            "10000000" + sn, os_version, "12345.6", "48.3'C", "3900000", "2100000",
+            ip, "classroom-5g", "",
+        ]
+    else:
+        # 신형 (12칸). 인덱스 9 는 PSK 평문이다 — 커넥터가 이걸 받고도
+        # 어디에도 남기지 않는지 보려고 일부러 넣는다.
+        system_row = [
+            "10000000" + sn, os_version, "12345.6", "48.3'C", "3900000", "2100000",
+            ip, "", "classroom-5g", "LeakCanary!234", "", "wpa-psk",
+        ]
 
     @sio.event
     async def connect(sid, environ):
@@ -83,7 +91,7 @@ def build(sn: str, os_version: str, ip: str, with_device: bool):
             rec += (f"[mock] ran {target}\n" + FILES[target]) if target in FILES \
                 else f"[missing] {target}\n"
             await sio.emit("update", {"record": rec})
-            rec += "\n[exit]"
+            rec += "\n종료됨." if legacy else "\n[exit]"
             await sio.emit("update", {"record": rec, "exit": True})
             return
         for line in code.splitlines():
@@ -95,7 +103,8 @@ def build(sn: str, os_version: str, ip: str, with_device: bool):
             rec += "[ready]\n"
             await sio.emit("update", {"record": rec})
             await asyncio.sleep(0.3)
-        rec += "\n[exit]"
+        # 구형 main.js 는 '종료됨.' 을 찍는다. 커넥터는 exit 플래그를 보므로 상관없다.
+        rec += "\n종료됨." if legacy else "\n[exit]"
         await sio.emit("update", {"record": rec, "exit": True})
 
     @sio.on("stop")
@@ -131,7 +140,7 @@ def build(sn: str, os_version: str, ip: str, with_device: bool):
 
 
 async def run(args):
-    app80, app8080 = build(args.sn, args.os, args.ip, not args.no_device)
+    app80, app8080 = build(args.sn, args.os, args.ip, not args.no_device, args.legacy)
     r1 = web.AppRunner(app80)
     await r1.setup()
     await web.TCPSite(r1, args.bind, args.ide_port).start()
@@ -149,10 +158,17 @@ def main():
     ap.add_argument("--os", default="piBo_260915v1-ph")
     ap.add_argument("--ip", default="127.0.0.1")
     ap.add_argument("--bind", default="127.0.0.1")
-    ap.add_argument("--ide-port", type=int, default=80)
+    ap.add_argument("--ide-port", type=int, default=0, help="0 이면 판에 맞춰 고른다")
     ap.add_argument("--sys-port", type=int, default=8080)
     ap.add_argument("--no-device", action="store_true")
-    asyncio.run(run(ap.parse_args()))
+    ap.add_argument("--legacy", action="store_true",
+                    help="구형 240701v1 흉내 — IDE 50000, system.sh 9칸, '종료됨.'")
+    args = ap.parse_args()
+    if not args.ide_port:
+        args.ide_port = 50000 if args.legacy else 80
+    if args.legacy and args.os == "piBo_260915v1-ph":
+        args.os = "piBo_240701v1"
+    asyncio.run(run(args))
 
 
 if __name__ == "__main__":

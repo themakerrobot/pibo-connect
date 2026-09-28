@@ -199,6 +199,31 @@ EV 인증서는 바로 사라진다 — 어느 쪽을 살지는 예산 판단. �
 `ie4uinit.exe -show` 를 한 번 돌리면 된다. 아이콘 자체는 exe 리소스에 들어 있다
 (`RT_ICON` 6개, sense-lab 의 ico 와 바이트 단위로 같다 — pefile 로 확인했다).
 
+## 옛날 OS 로봇
+
+`240701v1` 까지의 로봇도 그대로 된다. 설정은 없고, 찾을 때 확인해서 맞춘다.
+
+| | 구형 (~240701v1) | 신형 |
+|---|---|---|
+| IDE | `ide/main.js` — Node.js, **50000** | `ide/run_ide.py` — Python, 80 |
+| `system.sh` | 9칸: … `WLAN0, SSID0, ETH1` | 12칸: … `WLAN0, ETH1, SSID, PSK, …` |
+| 실행 끝 표시 | `종료됨.` | `[exit]` |
+
+- 포트는 `robot.find_ide_port()` 가 80 → 50000 순으로 TCP 만 확인한다(0.6초).
+  신형은 80 이 바로 열려 두 번째로 안 간다 — 신형 교실에서 느려지지 않는다.
+  찾은 포트는 목록에 `ide_port` 로 저장해 실행·파일 열기에 그대로 쓴다.
+- CSV 는 **칸 수**로 가른다 (`robot.parse_system`). 추측이 아니라 두 판의
+  `system.sh` echo 줄을 대조한 것이다. 구형에는 PSK 칸이 아예 없다.
+- socket.io 이벤트(`init`·`executeb`·`update`·`stop`·`load_directory`·`load`)는
+  이름과 형태가 같아 그대로 쓴다. 구형 `executeb` 에도 `isProtect` 검사가 없으므로
+  (`main.js:407`) codepath 하드코딩은 똑같이 중요하다.
+- 실기로는 검증하지 못했다 — 구형 실물이 없어 `tests/mock_pibo.py --legacy` 로만 봤다.
+
+```bash
+python -m tests.mock_pibo --legacy &     # 구형 흉내 (50000, 9칸, '종료됨.')
+python run.py                            # 서브넷 127.0.0 으로 [로봇 찾기]
+```
+
 ## 검증
 
 ```bash
@@ -264,6 +289,8 @@ CI 가 같은 스펙으로 빌드한다. `main` push 는 `nightly` 를, `v*` 태
 | 폴더 목록 · 파일 읽기 이벤트가 있다 | `ide/run_ide.py` `handle_load_directory`, `handle_load` |
 | `load_directory` 가 IDE 작업 폴더(PATH)를 바꾼다 | `ide/run_ide.py` `global PATH` |
 | AP SSID 가 `pibo-<시리얼 뒤 8자리>` | `system/hotspot.sh` `AP_SSID` |
+| 구형 IDE 는 Node.js 이고 포트가 50000 | `240701v1` `ide/main.js:12`, `system/init:35` |
+| 구형 `system.sh` 는 9칸이고 순서가 다르다 | `240701v1` `system/system.sh` 마지막 `echo` |
 | hostname 도 같은 8자리 | `system/init` |
 | PiBrain 은 GPIO 직결, Pibo 는 UART device 보드 | `openpibo/device.py` `DeviceByPiBrain` / `DeviceByPibo` |
 

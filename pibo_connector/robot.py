@@ -65,6 +65,17 @@ async def remote_wifi_scan(session: aiohttp.ClientSession, ip: str,
         return []
 
 
+async def find_ide_port(ip: str, timeout: float = 0.6) -> Optional[int]:
+    """IDE 가 열려 있는 포트. 신형 80, 구형(240701v1) 50000. 없으면 None.
+
+    TCP 접속만 해보므로 싸다 — 신형 교실에서는 80 이 바로 열려 두 번째는 안 간다.
+    """
+    for port in (config.IDE_PORT, config.IDE_PORT_LEGACY):
+        if await port_open(ip, port, timeout):
+            return port
+    return None
+
+
 async def port_open(ip: str, port: int, timeout: float = 0.5) -> bool:
     """TCP connect 만 해본다. 254개를 훑을 때 HTTP 보다 훨씬 싸다."""
     try:
@@ -80,16 +91,23 @@ async def port_open(ip: str, port: int, timeout: float = 0.5) -> bool:
 
 # ── socket.io (:80) ───────────────────────────────────────────────────
 def parse_system(v: List[str]) -> Dict[str, Any]:
-    """system.sh 의 CSV 를 사람이 읽을 형태로. 인덱스는 system/system.sh 기준.
+    """system.sh 의 CSV 를 사람이 읽을 형태로.
 
-        0 RPI_SERIAL  1 OS_VERSION  2 RUNTIME  3 TEMP  4 MEM_TOTAL
-        5 MEM_AVAIL   6 WLAN0       7 ETH1     8 SSID  9 PSK
-       10 IDENTITY   11 KEY_MGMT
+    OS 판에 따라 **칸 수와 순서가 다르다**. 앞 여섯 칸은 같고 뒤가 갈린다:
 
-    ⚠ 인덱스 9 는 WiFi 비밀번호 평문이다. 일부러 담지 않는다.
+      신형 (12칸)  … 6 WLAN0  7 ETH1   8 SSID  9 PSK  10 IDENTITY  11 KEY_MGMT
+      구형 ( 9칸)  … 6 WLAN0  7 SSID0  8 ETH1                      (PSK 없음)
+
+    칸 수로 가른다 — 추측이 아니라 두 판의 system.sh echo 줄을 대조한 사실이다.
+    ⚠ 신형 인덱스 9 는 WiFi 비밀번호 평문이다. 어느 쪽이든 담지 않는다.
     """
     def at(i: int) -> str:
         return v[i].strip() if len(v) > i and v[i] is not None else ""
+
+    if len(v) >= 12:
+        wlan, eth, ssid = at(6), at(7), at(8)
+    else:
+        wlan, ssid, eth = at(6), at(7), at(8)
 
     serial = at(0)
     return {
@@ -99,17 +117,18 @@ def parse_system(v: List[str]) -> Dict[str, Any]:
         "temp": at(3),
         "mem_total": at(4),
         "mem_avail": at(5),
-        "ip": at(6) or at(7),
-        "ssid": at(8),
+        "ip": wlan or eth,
+        "ssid": ssid,
     }
 
 
 class RobotLink:
     """로봇 한 대와의 socket.io 세션. async with 로 쓴다."""
 
-    def __init__(self, ip: str, timeout: float = 8.0):
+    def __init__(self, ip: str, timeout: float = 8.0, port: Optional[int] = None):
         self.ip = ip
         self.timeout = timeout
+        self.port = port or config.IDE_PORT
         self.sio = socketio.AsyncClient(reconnection=False, logger=False,
                                         engineio_logger=False)
         self._system: "asyncio.Future[List[str]]" = asyncio.get_running_loop().create_future()
@@ -155,7 +174,7 @@ class RobotLink:
         await self.close()
 
     async def connect(self) -> None:
-        await self.sio.connect(f"http://{self.ip}:{config.IDE_PORT}",
+        await self.sio.connect(f"http://{self.ip}:{self.port}",
                                transports=["websocket"],
                                wait_timeout=self.timeout)
 
@@ -215,9 +234,13 @@ class RobotLink:
 async def identify(ip: str, session: Optional[aiohttp.ClientSession] = None,
                    timeout: float = 8.0, rules: Optional[dict] = None) -> Optional[dict]:
     """한 대를 식별한다. init 한 번 + (필요하면) device 보조 판별."""
+    ide_port = await find_ide_port(ip)
+    if ide_port is None:
+        return None
+
     info: Optional[dict] = None
     try:
-        async with RobotLink(ip, timeout=timeout) as link:
+        async with RobotLink(ip, timeout=timeout, port=ide_port) as link:
             info = await link.system()
     except Exception:
         return None
@@ -225,6 +248,7 @@ async def identify(ip: str, session: Optional[aiohttp.ClientSession] = None,
         return None
 
     info["ip"] = info.get("ip") or ip
+    info["ide_port"] = ide_port
     info["mode"] = "net"
 
     device_reply = None
