@@ -69,6 +69,20 @@ jobs:
       - name: 실제로 뜨는지 (이걸 통과해야 올린다)
         run: python -m tests.exe_smoke ${{ matrix.built }} --timeout 150
 
+      # ── 파이썬 없는 PC 용 '풀어서 쓰는' 묶음 (윈도우만) ──
+      # 서명 없는 exe 는 Windows 11 스마트 앱 컨트롤에서 복불복이다. SAC 는 파일
+      # 해시의 클라우드 평판으로 판정하므로, 같은 코드로 만든 연속 릴리스끼리도
+      # 결과가 갈린다 (0.4.1·0.4.2 는 통과, 0.4.3 릴리스판은 차단).
+      # 이 묶음은 판정 대상을 바꾼다 — 실행되는 바이너리가 우리 exe 가 아니라
+      # python.org 가 PSF 이름으로 서명해 배포하는 공식 python.exe 다.
+      # make_portable.py 가 그 서명을 직접 확인하고, 없으면 여기서 멈춘다.
+      - name: 풀어서 쓰는 묶음 만들기
+        if: runner.os == 'Windows'
+        run: python build/make_portable.py --out dist/pibo-connect-windows-portable.zip
+      - name: 묶음이 실제로 켜지는지 (이걸 통과해야 올린다)
+        if: runner.os == 'Windows'
+        run: python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip --timeout 150
+
       # ── 윈도우 코드 서명 (인증서 secret 이 있을 때만) ──
       # 서명이 없으면 Windows 가 파일 해시 평판으로 SmartScreen 경고를 띄우고,
       # Windows 11 스마트 앱 컨트롤은 아예 실행을 막는다. 빌드마다 해시가 바뀌어
@@ -98,10 +112,15 @@ jobs:
         run: |
           mkdir -p out
           cp "${{ matrix.built }}" "out/${{ matrix.asset }}"
+          # 윈도우는 exe 와 zip 묶음을 같이 올린다
+          if [ -f dist/pibo-connect-windows-portable.zip ]; then
+            cp dist/pibo-connect-windows-portable.zip out/
+          fi
+          ls -la out
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: out/${{ matrix.asset }}
+          path: out/
           retention-days: 7
 
   publish:

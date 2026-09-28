@@ -28,6 +28,12 @@ ROBOT_HOME = "/home/pi/code"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8900
 
+# 목록·설정을 둘 곳을 밖에서 정할 때 쓰는 환경변수.
+# 풀어서 쓰는 묶음(build/make_portable.py)의 시작하기.bat 이 이걸 묶음 폴더 옆의
+# data\ 로 지정한다. 그러면 다음 버전으로 python\ 과 app\ 만 덮어써도
+# 찾아둔 로봇 목록이 남는다.
+DATA_ENV = "PIBO_CONNECT_DATA"
+
 
 def frozen() -> bool:
     """PyInstaller 로 묶인 실행 파일인가."""
@@ -52,31 +58,48 @@ def examples_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "examples"
 
 
-def data_dir() -> Path:
-    """목록·설정을 저장할 곳.
-
-    exe 는 임시 폴더에 풀리므로 실행 파일 옆에 저장한다. 소스 실행은 리포 루트.
-    쓰기가 막힌 경로면(예: Program Files) 사용자 홈으로 물러난다.
-    """
-    if frozen():
-        base = Path(sys.executable).resolve().parent
-    else:
-        base = Path(__file__).resolve().parent.parent
-
+def _writable(base: Path) -> bool:
+    """그 폴더를 만들 수 있고 실제로 쓸 수 있는지 본다."""
     try:
         base.mkdir(parents=True, exist_ok=True)
         probe = base / ".write_test"
         probe.write_text("", encoding="utf-8")
         probe.unlink()
-        return base
+        return True
     except Exception:
-        home = Path(os.path.expanduser("~"))
-        new, old = home / ".pibo-connect", home / ".pibo-connector"
-        # 이름을 바꾸기 전에 쓰던 폴더가 있으면 그대로 쓴다. 로봇 목록을 잃지 않게.
-        if not new.exists() and old.is_dir():
-            return old
-        new.mkdir(parents=True, exist_ok=True)
-        return new
+        return False
+
+
+def data_dir() -> Path:
+    """목록·설정을 저장할 곳.
+
+    1. 환경변수 PIBO_CONNECT_DATA 가 있으면 그곳 (풀어서 쓰는 묶음이 쓴다)
+    2. exe 는 임시 폴더에 풀리므로 실행 파일 옆
+    3. 소스 실행은 리포 루트
+    쓰기가 막힌 경로면(예: Program Files) 사용자 홈으로 물러난다.
+    """
+    want = os.environ.get(DATA_ENV, "").strip()
+    if want:
+        base = Path(want).expanduser()
+        if _writable(base):
+            return base
+        # 지정한 곳이 안 되면 잠자코 홈으로 간다. 목록 때문에 앱이 안 뜨면 안 된다.
+    elif frozen():
+        base = Path(sys.executable).resolve().parent
+        if _writable(base):
+            return base
+    else:
+        base = Path(__file__).resolve().parent.parent
+        if _writable(base):
+            return base
+
+    home = Path(os.path.expanduser("~"))
+    new, old = home / ".pibo-connect", home / ".pibo-connector"
+    # 이름을 바꾸기 전에 쓰던 폴더가 있으면 그대로 쓴다. 로봇 목록을 잃지 않게.
+    if not new.exists() and old.is_dir():
+        return old
+    new.mkdir(parents=True, exist_ok=True)
+    return new
 
 
 def fleet_path() -> Path:

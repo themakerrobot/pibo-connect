@@ -48,8 +48,20 @@ jobs:
       - run: pyinstaller build/pibo-connect.spec --noconfirm
       - name: 묶은 실행 파일이 실제로 뜨는지
         run: python -m tests.exe_smoke ${{ matrix.built }} --timeout 150
+
+      # 풀어서 쓰는 묶음도 push 마다 만들어 켜 본다. 윈도우에서만 뜻이 있다.
+      # 안에 든 python.exe 의 PSF 서명이 없으면 make_portable.py 가 멈춘다.
+      - name: 풀어서 쓰는 묶음 만들기
+        if: runner.os == 'Windows'
+        run: python build/make_portable.py --out dist/pibo-connect-windows-portable.zip
+      - name: 묶음이 실제로 켜지는지
+        if: runner.os == 'Windows'
+        run: python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip --timeout 150
+
       - uses: actions/upload-artifact@v4
         with:
           name: pibo-connect-${{ matrix.os }}
-          path: ${{ matrix.built }}
+          path: |
+            ${{ matrix.built }}
+            dist/pibo-connect-windows-portable.zip
           retention-days: 14

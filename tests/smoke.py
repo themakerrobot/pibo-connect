@@ -218,6 +218,99 @@ def test_spec_paths():
     check("예제가 실제로 있다", (config.examples_dir() / "hello.py").exists())
 
 
+def test_portable():
+    """풀어서 쓰는 묶음(build/make_portable.py) 의 자리와 런처가 맞는가.
+
+    묶음은 소스 실행(frozen=False) 과 같은 배치를 쓴다. 그래서 spec 처럼
+    따로 맞출 게 없지만, 확인은 해 둔다 — app/ 안의 배치가 틀리면
+    풀어 쓴 PC 에서만 static 이 404 다.
+
+    .bat 은 ASCII 여야 한다. cmd.exe 는 배치 파일을 콘솔 코드페이지로 읽어서,
+    UTF-8 한글을 넣으면 chcp 65001 을 먼저 해도 깨진다. 한글은 파이썬이 찍는다.
+    """
+    print("풀어서 쓰는 묶음")
+    sys.path.insert(0, str(ROOT / "build"))
+    import make_portable as mp
+
+    pkg = Path(mp.__file__).resolve().parent.parent / "pibo_connector"
+    check("static 은 패키지 바로 아래 (pibo_connector/ 를 통째로 넣으면 맞는다)",
+          config.static_dir() == pkg / "static", config.static_dir())
+    check("examples 는 패키지의 부모 아래 (app/examples 가 맞는다)",
+          config.examples_dir() == pkg.parent / "examples", config.examples_dir())
+
+    pth = mp.PTH_LINES
+    check("._pth 가 표준 라이브러리 zip 을 먼저 본다", pth[0] == f"python{mp.PY_TAG}.zip", pth)
+    check("._pth 에 app 이 있다", f"..\\{mp.APP_DIR}" in pth, pth)
+    check("._pth 에 app/lib 이 있다", f"..\\{mp.APP_DIR}\\{mp.LIB_DIR}" in pth, pth)
+    # import site 가 없으면 importlib.metadata 가 의존성 정보를 못 읽는다.
+    check("._pth 에 import site 가 있다", "import site" in pth, pth)
+
+    for name, bat in (("시작하기", mp.START_BAT), ("로봇 확인하기", mp.CHECK_BAT)):
+        try:
+            bat.encode("ascii")
+            ascii_ok = True
+        except UnicodeEncodeError:
+            ascii_ok = False
+        check(f"{name}.bat 은 ASCII 다", ascii_ok,
+              "cmd.exe 가 읽는 코드페이지가 PC 마다 달라 한글은 깨진다")
+        check(f"{name}.bat 이 UTF-8 콘솔로 바꾼다", "chcp 65001" in bat)
+        check(f"{name}.bat 이 자기 폴더로 이동한다", 'cd /d "%~dp0"' in bat)
+        check(f"{name}.bat 이 묶음 안 python.exe 를 쓴다",
+              '"python\\python.exe"' in bat)
+        check(f"{name}.bat 이 압축 안 풀고 눌렀을 때를 막는다",
+              'if not exist "python\\python.exe"' in bat)
+    check("시작하기.bat 이 -m pibo_connector 로 띄운다",
+          "-m pibo_connector %*" in mp.START_BAT)
+    check("시작하기.bat 이 목록 자리를 묶음 옆 data\\ 로 준다",
+          f'set "{config.DATA_ENV}=%~dp0data"' in mp.START_BAT,
+          "환경변수 이름이 config.DATA_ENV 와 같아야 한다")
+    check("로봇 확인하기.bat 이 --check 를 쓴다", "--check %ip%" in mp.CHECK_BAT)
+
+    # 환경변수 우회가 실제로 먹는지. 안 먹으면 목록이 묶음 밖에 생긴다.
+    import os
+    with tempfile.TemporaryDirectory() as td:
+        want = Path(td) / "data"
+        old = os.environ.get(config.DATA_ENV)
+        os.environ[config.DATA_ENV] = str(want)
+        try:
+            got = config.data_dir()
+        finally:
+            if old is None:
+                os.environ.pop(config.DATA_ENV, None)
+            else:
+                os.environ[config.DATA_ENV] = old
+        check(f"{config.DATA_ENV} 가 목록 자리를 바꾼다", got == want, got)
+    check("환경변수를 지우면 원래대로", config.data_dir() == ROOT, config.data_dir())
+
+
+    # PE 인증서 테이블을 읽는 오프셋 계산. 이게 틀리면 서명 없는 python.exe 를
+    # '서명 있다' 로 통과시켜 묶음의 존재 이유가 사라진다. 합성 PE 로 확인한다.
+    import struct
+    def fake_pe(cert_off, cert_size, ctype=0x0002, magic=0x20B):
+        e = 0x80
+        b = bytearray(0x400)
+        b[0:2] = b"MZ"
+        struct.pack_into("<I", b, 0x3C, e)
+        b[e:e + 4] = b"PE\0\0"
+        struct.pack_into("<H", b, e + 24, magic)          # optional header magic
+        dd = e + 24 + (112 if magic == 0x20B else 96)     # 데이터 디렉토리 시작
+        struct.pack_into("<II", b, dd + 4 * 8, cert_off, cert_size)  # 4번 = Certificate
+        if cert_off:
+            struct.pack_into("<IHH", b, cert_off, cert_size, 0x0200, ctype)
+        return bytes(b)
+
+    with tempfile.TemporaryDirectory() as td:
+        def ask(data):
+            f = Path(td) / "t.exe"
+            f.write_bytes(data)
+            return mp.pe_has_signature(f)
+        check("서명 있는 PE32+ 를 알아본다", ask(fake_pe(0x200, 0x100))[0] is True)
+        check("서명 있는 PE32 도 알아본다", ask(fake_pe(0x200, 0x100, magic=0x10B))[0] is True)
+        check("Certificate Table 이 비면 '서명 없음'", ask(fake_pe(0, 0))[0] is False)
+        check("PKCS#7 이 아니면 거른다", ask(fake_pe(0x200, 0x100, ctype=0x0001))[0] is False)
+        check("PE 가 아니면 거른다", ask(b"\x7fELF" + bytes(0x400))[0] is False)
+
+
 def test_server():
     """소스 실행이 실제로 뜨는지. 포트는 고정으로 가정하지 않는다 —
     _free_port 가 막힌 포트를 피해 옮기므로 서버가 찍는 주소를 읽는다."""
@@ -262,7 +355,7 @@ def main() -> int:
     utf8_console(sys.stdout, sys.stderr)
     for fn in (test_parse_system, test_detect, test_store, test_ap_rx,
                test_wrap, test_launcher, test_release_notes, test_spec_paths,
-               test_server):
+               test_portable, test_server):
         fn()
     print()
     if FAIL:

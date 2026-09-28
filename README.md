@@ -20,11 +20,30 @@
 
 **파이썬 없는 노트북** — [Releases](https://github.com/themakerrobot/pibo-connect/releases)
 
-| 노트북 | 파일 |
-|---|---|
-| Windows | `pibo-connect-windows.exe` |
-| Linux | `pibo-connect-linux` (`chmod +x` 후 실행) |
-| macOS | `pibo-connect-macos` (`chmod +x`, 첫 실행은 우클릭 → 열기) |
+| 노트북 | 파일 | |
+|---|---|---|
+| **Windows** | **`pibo-connect-windows-portable.zip`** | 교실 배포용. 압축을 풀고 `시작하기` 를 두 번 누른다 |
+| Windows | `pibo-connect-windows.exe` | 파일 하나. PC 에 따라 스마트 앱 컨트롤이 막는다 |
+| Linux | `pibo-connect-linux` | `chmod +x` 후 실행 |
+| macOS | `pibo-connect-macos` | `chmod +x`, 첫 실행은 우클릭 → 열기 |
+
+**zip 묶음을 먼저 권한다.** 서명 없는 exe 는 Windows 11 스마트 앱 컨트롤에서
+막힐지 아닐지가 빌드마다 갈린다 (아래 [윈도우에서 경고가 뜰 때](#윈도우에서-경고가-뜰-때) 참고). 묶음은
+실행되는 바이너리를 python.org 가 PSF 이름으로 서명해 배포하는 공식 `python.exe` 로
+바꿔서 그 판정을 피한다. 파이썬을 따로 깔 필요는 없다 — 묶음 안에 들어 있다.
+
+```
+pibo-connect/
+  시작하기.bat            켜는 버튼 (ASCII 만 — 아래 참고)
+  로봇 확인하기.bat        안 찾아질 때 --check
+  먼저-읽어보세요.txt
+  python/                 공식 embeddable (PSF 서명). 여기만 실행된다
+  app/                    pibo_connector/ · examples/ · lib/(의존성)
+  data/                   찾은 로봇 목록 (처음 켤 때 생긴다)
+```
+
+다음 버전으로 올릴 때 `python/` 과 `app/` 만 덮어쓰면 `data/` 의 로봇 목록이 남는다
+(`시작하기.bat` 이 `PIBO_CONNECT_DATA` 를 묶음 옆 `data\` 로 준다).
 
 `nightly` 는 `main` 이 바뀔 때마다 자동으로 덮어써진다. 수업에 쓸 거면
 버전 태그가 붙은 정식 릴리스를 받는 쪽이 낫다.
@@ -179,8 +198,28 @@ Get-Item .\pibo-connect-windows.exe -Stream Zone.Identifier -ErrorAction Silentl
 exe 에는 버전 정보(회사 Circulus · 제품 파이보 커넥터 · 버전)가 들어 있어 속성 창의
 '자세히' 탭에 정체가 뜬다. 서명은 아니라서 경고 자체를 없애지는 못한다.
 
-**"스마트 앱 컨트롤이 차단"** (Windows 11) — 서명 없이는 못 넘어간다. 끄면 재설치
-전엔 못 켠다.
+**"스마트 앱 컨트롤이 차단"** (Windows 11) — exe 로는 못 넘어간다. 끄면 재설치
+전엔 다시 켤 수 없다. **`pibo-connect-windows-portable.zip` 을 주면 된다.**
+
+SAC 는 파일 내용을 보지 않고 그 파일의 sha256 을 Microsoft 클라우드에 물어
+'세상에서 본 적 있나' 로 판정한다. 서명이 없으면 빌드마다 해시가 새것이라 평판이
+0 이고, **같은 코드로 만든 연속 릴리스끼리도 결과가 갈린다** — 0.4.1·0.4.2 는
+통과했는데 0.4.3 릴리스판은 막혔고, 같은 커밋의 nightly 는 통과했다 (워크플로 실행이
+달라 바이너리가 바이트 단위로 다르다). 빌드 설정 쪽 차이는 없었다:
+`git diff 17dedce a1fef16 -- build/ .github/workflows/ requirements.txt` 가 비어 있다.
+
+zip 묶음은 그 판정을 피하지 않고 **대상을 바꾼다.** 실행되는 PE 는 우리 exe 가 아니라
+python.org 배포본의 `python.exe` 이고, 그건 Python Software Foundation 이름으로
+Authenticode 서명이 되어 있다. 우리 코드는 `.py` 텍스트로만 들어가고 시작 버튼은
+`.bat` 이다. 그 전제를 추측으로 두지 않으려고 `build/make_portable.py` 가 받아온
+`python.exe` 의 PE 인증서 테이블을 직접 읽고, 윈도우에서는
+`Get-AuthenticodeSignature` 로 상태와 주체(PSF)까지 확인한다 — 서명이 없거나 PSF 가
+아니면 빌드를 세운다. 서명 없는 묶음은 exe 와 다를 게 없으니까.
+
+`.bat` 은 **ASCII 만 쓴다.** cmd.exe 는 배치 파일을 콘솔 코드페이지로 읽어서, UTF-8
+한글을 넣으면 `chcp 65001` 을 먼저 해도 깨진다 (한글 안 쓰는 윈도우에서 특히).
+선생님이 보는 한글은 전부 파이썬이 찍는다. `tests/smoke.py` 가 `.bat` 이 ASCII 인지,
+BOM 이 없는지 매번 확인한다.
 
 근본 해결은 **코드 서명**이다. 인증서(.pfx)가 생기면 리포 secret 두 개만 넣으면
 CI 가 윈도우 빌드에 자동으로 서명한다 (`.github/workflows/release.yml`):
@@ -270,8 +309,9 @@ python run.py                            # 서브넷 127.0.0 으로 [로봇 찾�
 ## 검증
 
 ```bash
-python -m tests.smoke            # 파싱 · 판별 · PSK 유출 · 래퍼 · 런처 · 번들 경로 · 서버 기동
+python -m tests.smoke            # 파싱 · 판별 · PSK 유출 · 래퍼 · 런처 · 번들 경로 · 묶음 배치 · 서버 기동
 python -m tests.exe_smoke dist/pibo-connect   # 묶은 실행 파일이 실제로 뜨는지 (CI 가 세 OS 에서 돌린다)
+python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip   # zip 을 풀어서 켜 본다 (윈도우)
 ```
 
 기기 없이 전 경로를 돌려보려면 가짜 로봇을 띄운다:
@@ -313,6 +353,27 @@ sense-lab 의 파이보 얼굴(`tools/portable/icon.ico`) 그대로다.
 
 CI 가 같은 스펙으로 빌드한다. `main` push 는 `nightly` 를, `v*` 태그는 정식
 릴리스를 만든다 (`.github/workflows/release.yml`).
+
+## 풀어서 쓰는 묶음 빌드 (손으로)
+
+```bash
+python build/make_portable.py --out dist/pibo-connect-windows-portable.zip
+python -m tests.portable_smoke dist/pibo-connect-windows-portable.zip
+```
+
+`python-3.11.9-embed-amd64.zip` 을 python.org 에서 받아 서명을 확인한 뒤,
+의존성을 `app/lib` 에 깔고 `python311._pth` 로 `sys.path` 를 `../app` 과
+`../app/lib` 로 고정한다. 윈도우가 아닌 데서도 만들 수 있다 (`pip --platform
+win_amd64` 로 윈도우 휠을 받는다). 단 체인 검증(`Get-AuthenticodeSignature`)과
+기동 시험은 윈도우에서만 돌아간다 — CI 의 `windows-latest` 잡이 그걸 맡는다.
+
+묶음의 배치는 소스 실행(`frozen=False`)과 같다. `app/pibo_connector/static` 이
+`config.static_dir()`, `app/examples` 가 `config.examples_dir()` 다. exe 의 spec 처럼
+따로 맞출 게 없지만 `tests/smoke.py` 의 `test_portable` 이 그 대응과 `._pth`·`.bat`
+내용을 매번 확인한다.
+
+CI 는 `windows-latest` 잡에서 exe 와 묶음을 같이 만들고, 둘 다 **실제로 띄워
+화면이 나오는 것을 확인한 뒤에만** 릴리스에 올린다.
 
 ## 근거
 
