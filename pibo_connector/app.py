@@ -56,7 +56,7 @@ def create_app(token: str = "") -> FastAPI:
         yield
 
     hub = Hub()
-    app = FastAPI(title="pibo-connector", version=__version__, docs_url=None,
+    app = FastAPI(title="pibo-connect", version=__version__, docs_url=None,
                   redoc_url=None, lifespan=lifespan)
     fleet = Fleet()
     runner = Runner(fleet, hub.emit)
@@ -71,7 +71,7 @@ def create_app(token: str = "") -> FastAPI:
         # 묶인 실행 파일이라면 빌드가 잘못된 것이다 (spec 의 datas 대상 확인).
         raise RuntimeError(
             f"정적 파일 디렉토리가 없다: {static}"
-            + ("  (실행 파일 빌드 문제다 — build/pibo-connector.spec 의 datas 확인)"
+            + ("  (실행 파일 빌드 문제다 — build/pibo-connect.spec 의 datas 확인)"
                if config.frozen() else ""))
     app.mount("/static", StaticFiles(directory=str(static)), name="static")
 

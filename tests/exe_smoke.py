@@ -1,6 +1,6 @@
 """묶은 실행 파일이 실제로 뜨는지 본다. 세 OS 에서 같은 스크립트를 쓴다.
 
-    python -m tests.exe_smoke dist/pibo-connector.exe [--timeout 120]
+    python -m tests.exe_smoke dist/pibo-connect.exe [--timeout 120]
 
 실패하면 실행 파일이 찍은 stdout/stderr 를 통째로 보여준다.
 PyInstaller 로 묶인 뒤에야 드러나는 문제(모듈 누락, static 경로)는
@@ -50,7 +50,7 @@ def main() -> int:
 
             # static 이 번들에 안 들어갔으면 여기서 걸린다
             # static 이 번들에 안 들어갔으면 여기서 걸린다. 폰트·이미지까지 본다.
-            for path, want in (("/", "pibo-connector"), ("/static/app.js", ""),
+            for path, want in (("/", "파이보 커넥터"), ("/static/app.js", ""),
                                ("/static/maker-ui.css", "--paper"),
                                ("/static/fonts/pretendard.css", "Pretendard"),
                                ("/static/fonts/woff2-dynamic-subset/PretendardVariable.subset.0.woff2", ""),

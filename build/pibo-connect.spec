@@ -2,7 +2,7 @@
 """PyInstaller 스펙. 파이썬이 없는 노트북에서 그대로 도는 한 덩어리 실행 파일.
 
     pip install -r requirements.txt pyinstaller
-    pyinstaller build/pibo-connector.spec --noconfirm
+    pyinstaller build/pibo-connect.spec --noconfirm
 
 번들에 들어가는 데이터는 config.py 가 보는 자리에 정확히 풀어야 한다.
 frozen 일 때 그 자리는 sys._MEIPASS 바로 아래다:
@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 from pibo_connector import __version__   # noqa: E402  — 태그 가드와 같은 값
 STATIC = ROOT / "pibo_connector" / "static"
 EXAMPLES = ROOT / "examples"
-ICON = ROOT / "build" / "pibo-connector.ico"    # sense-lab 의 파이보 얼굴 (tools/portable/icon.ico) 그대로
+ICON = ROOT / "build" / "pibo-connect.ico"    # sense-lab 의 파이보 얼굴 (tools/portable/icon.ico) 그대로
 
 for d in (STATIC, EXAMPLES):
     if not d.is_dir():
@@ -65,12 +65,12 @@ def win_version_info():
         kids=[
             StringFileInfo([StringTable("040904B0", [
                 StringStruct("CompanyName", "Circulus"),
-                StringStruct("ProductName", "파이보 커넥터 (pibo-connector)"),
+                StringStruct("ProductName", "파이보 커넥터 (pibo-connect)"),
                 StringStruct("FileDescription", "파이보 커넥터 — 파이보/파이브레인 여러 대를 브라우저로 찾고 실행"),
                 StringStruct("FileVersion", __version__),
                 StringStruct("ProductVersion", __version__),
-                StringStruct("OriginalFilename", "pibo-connector.exe"),
-                StringStruct("InternalName", "pibo-connector"),
+                StringStruct("OriginalFilename", "pibo-connect.exe"),
+                StringStruct("InternalName", "pibo-connect"),
                 StringStruct("LegalCopyright", "© Circulus"),
             ])]),
             VarFileInfo([VarStruct("Translation", [0x0409, 1200])]),
@@ -97,7 +97,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="pibo-connector",
+    name="pibo-connect",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

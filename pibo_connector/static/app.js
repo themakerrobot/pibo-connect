@@ -1,4 +1,4 @@
-/* pibo-connector — 화면. 의존성 0, CDN 0. 오프라인에서 그대로 돈다.
+/* pibo-connect — 화면. 의존성 0, CDN 0. 오프라인에서 그대로 돈다.
    모양은 sense-lab 의 "학습지" 테마(maker-ui.css) 를 그대로 쓴다. */
 'use strict';
 

@@ -189,7 +189,7 @@ def test_spec_paths():
     'Directory does not exist' 로 죽는다. 실제로 한 번 그랬다.
     """
     print("실행 파일 번들 경로")
-    spec = (ROOT / "build" / "pibo-connector.spec").read_text(encoding="utf-8")
+    spec = (ROOT / "build" / "pibo-connect.spec").read_text(encoding="utf-8")
     # frozen 일 때 static_dir() 은 sys._MEIPASS / 'static' 이다.
     # 그러므로 datas 의 대상도 'static' 이어야 한다.
     check("spec 의 datas 에 (STATIC → 'static')",
@@ -225,7 +225,7 @@ def test_server():
         check("트리거 포트", info["trigger_port"] == config.TRIG_PORT)
         try:
             st, html = srv.get("/", 5)
-            check("화면이 나온다", st == 200 and "pibo-connector" in html)
+            check("화면이 나온다", st == 200 and "파이보 커넥터" in html)
             # codepath(_fleet.py) 를 UI 에 노출하지 않는다 (executeb 에 is_protect 가 없다).
             # /home/pi/code 폴더 자체는 [로봇 안의 파일] 의 기본 위치라 화면에 있어도 된다.
             check("화면에 codepath 가 없다",

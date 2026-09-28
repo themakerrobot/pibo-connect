@@ -40,7 +40,7 @@ class Server:
         self._fh = open(self.log_path, "wb")
         # PyInstaller onefile 은 부트로더가 진짜 파이썬을 자식으로 띄운다.
         # 부모만 죽이면 자식이 고아로 남는다 — CI 정리 단계에
-        # 'Terminate orphan process (pibo-connector)' 가 찍히던 이유다.
+        # 'Terminate orphan process (pibo-connect)' 가 찍히던 이유다.
         # POSIX 는 새 세션으로 띄워 그룹째, 윈도우는 taskkill /T 로 트리째 죽인다.
         kw = {} if os.name == "nt" else {"start_new_session": True}
         self.proc = subprocess.Popen(self.cmd, stdout=self._fh,

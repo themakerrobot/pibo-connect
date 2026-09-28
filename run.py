@@ -4,7 +4,7 @@
     pip install -r requirements.txt
     python run.py
 
-exe 로 쓰려면 릴리스의 pibo-connector.exe 를 받으면 된다 — 같은 코드다.
+exe 로 쓰려면 릴리스의 pibo-connect.exe 를 받으면 된다 — 같은 코드다.
 """
 
 import sys

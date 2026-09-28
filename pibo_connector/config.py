@@ -65,9 +65,13 @@ def data_dir() -> Path:
         probe.unlink()
         return base
     except Exception:
-        home = Path(os.path.expanduser("~")) / ".pibo-connector"
-        home.mkdir(parents=True, exist_ok=True)
-        return home
+        home = Path(os.path.expanduser("~"))
+        new, old = home / ".pibo-connect", home / ".pibo-connector"
+        # 이름을 바꾸기 전에 쓰던 폴더가 있으면 그대로 쓴다. 로봇 목록을 잃지 않게.
+        if not new.exists() and old.is_dir():
+            return old
+        new.mkdir(parents=True, exist_ok=True)
+        return new
 
 
 def fleet_path() -> Path:

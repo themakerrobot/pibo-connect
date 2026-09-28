@@ -33,9 +33,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            built: dist/pibo-connector.exe
+            built: dist/pibo-connect.exe
           - os: ubuntu-latest
-            built: dist/pibo-connector
+            built: dist/pibo-connect
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -45,11 +45,11 @@ jobs:
       - run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
-      - run: pyinstaller build/pibo-connector.spec --noconfirm
+      - run: pyinstaller build/pibo-connect.spec --noconfirm
       - name: 묶은 실행 파일이 실제로 뜨는지
         run: python -m tests.exe_smoke ${{ matrix.built }} --timeout 150
       - uses: actions/upload-artifact@v4
         with:
-          name: pibo-connector-${{ matrix.os }}
+          name: pibo-connect-${{ matrix.os }}
           path: ${{ matrix.built }}
           retention-days: 14

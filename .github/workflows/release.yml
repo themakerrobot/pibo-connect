@@ -29,14 +29,14 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset: pibo-connector-windows.exe
-            built: dist/pibo-connector.exe
+            asset: pibo-connect-windows.exe
+            built: dist/pibo-connect.exe
           - os: ubuntu-latest
-            asset: pibo-connector-linux
-            built: dist/pibo-connector
+            asset: pibo-connect-linux
+            built: dist/pibo-connect
           - os: macos-latest
-            asset: pibo-connector-macos
-            built: dist/pibo-connector
+            asset: pibo-connect-macos
+            built: dist/pibo-connect
     runs-on: ${{ matrix.os }}
     env:
       # step 의 if 는 secrets 를 직접 못 보고, 자기 step 의 env 도 못 본다.
@@ -65,7 +65,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
       - name: 빌드
-        run: pyinstaller build/pibo-connector.spec --noconfirm
+        run: pyinstaller build/pibo-connect.spec --noconfirm
       - name: 실제로 뜨는지 (이걸 통과해야 올린다)
         run: python -m tests.exe_smoke ${{ matrix.built }} --timeout 150
 
@@ -88,7 +88,7 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
                       Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
           & $signtool sign /f $pfx /p $env:PFX_PASS /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
-                     /d "pibo-connector" "${{ matrix.built }}"
+                     /d "pibo-connect" "${{ matrix.built }}"
           if ($LASTEXITCODE -ne 0) { throw "서명 실패" }
           & $signtool verify /pa /v "${{ matrix.built }}"
           if ($LASTEXITCODE -ne 0) { throw "서명 검증 실패" }

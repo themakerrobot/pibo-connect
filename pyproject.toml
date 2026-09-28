@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pibo-connector"
-version = "0.3.2"
+name = "pibo-connect"
+version = "0.3.3"
 description = "파이보/파이브레인 다대수 제어 — 브라우저 한 장으로 찾고, 점호하고, 같은 코드를 한 번에 실행한다"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pibo-connector = "pibo_connector.__main__:main"
+pibo-connect = "pibo_connector.__main__:main"
 
 [tool.setuptools]
 packages = ["pibo_connector"]

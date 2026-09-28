@@ -26,7 +26,7 @@ def _noop(_: dict) -> None:
 
 # 동시 시작 래퍼. 사용자 코드는 '# --- GO ---' 한 줄로 앞뒤를 나눈다.
 # 앞은 준비(import 등), 뒤가 본편이다.
-WRAP = '''# pibo-connector sync wrapper
+WRAP = '''# pibo-connect sync wrapper
 import socket as _pc_s
 _pc_k = _pc_s.socket(_pc_s.AF_INET, _pc_s.SOCK_DGRAM)
 _pc_k.setsockopt(_pc_s.SOL_SOCKET, _pc_s.SO_REUSEADDR, 1)
@@ -72,7 +72,7 @@ def launcher_for(path: str) -> Tuple[str, str]:
         return (f"[ -f {q(p)} ] || {{ echo '[missing]' {q(p)}; exit 1; }}\n"
                 f"cd {q(d)} && exec sh {q(p)}\n"), "shell"
     code = (
-        "# pibo-connector: 로봇에 있는 파일을 그 자리에서 실행한다\n"
+        "# pibo-connect: 로봇에 있는 파일을 그 자리에서 실행한다\n"
         "import os, runpy, sys\n"
         f"_p = {p!r}\n"
         "if not os.path.isfile(_p):\n"

@@ -9,7 +9,7 @@
 - **오프라인에서 동작한다.** CDN·npm·빌드 없음. 교실 `pibo` 망에 인터넷이 없어도 된다
 
 ```
-[노트북] pibo-connector ──┬── :80   socket.io  init / executeb / update / stop
+[노트북] pibo-connect ───┬── :80   socket.io  init / executeb / update / stop
    └ 브라우저 (화면)      └── :8080 HTTP       /wifi · /wifi_scan · /device
 ```
 
@@ -22,9 +22,9 @@
 
 | 노트북 | 파일 |
 |---|---|
-| Windows | `pibo-connector-windows.exe` |
-| Linux | `pibo-connector-linux` (`chmod +x` 후 실행) |
-| macOS | `pibo-connector-macos` (`chmod +x`, 첫 실행은 우클릭 → 열기) |
+| Windows | `pibo-connect-windows.exe` |
+| Linux | `pibo-connect-linux` (`chmod +x` 후 실행) |
+| macOS | `pibo-connect-macos` (`chmod +x`, 첫 실행은 우클릭 → 열기) |
 
 `nightly` 는 `main` 이 바뀔 때마다 자동으로 덮어써진다. 수업에 쓸 거면
 버전 태그가 붙은 정식 릴리스를 받는 쪽이 낫다.
@@ -170,7 +170,7 @@ m.set_motion('dance1', 2)            # 본편 — 트리거를 받은 순간 같
 표시가 붙었는지 보는 법 (PowerShell):
 
 ```powershell
-Get-Item .\pibo-connector-windows.exe -Stream Zone.Identifier -ErrorAction SilentlyContinue
+Get-Item .\pibo-connect-windows.exe -Stream Zone.Identifier -ErrorAction SilentlyContinue
 ```
 
 나오면 붙은 것. 넘어가는 법은 셋 중 하나: "추가 정보 → 실행" 한 번 / 파일 속성 맨 아래
@@ -203,7 +203,7 @@ EV 인증서는 바로 사라진다 — 어느 쪽을 살지는 예산 판단. �
 
 ```bash
 python -m tests.smoke            # 파싱 · 판별 · PSK 유출 · 래퍼 · 런처 · 번들 경로 · 서버 기동
-python -m tests.exe_smoke dist/pibo-connector   # 묶은 실행 파일이 실제로 뜨는지 (CI 가 세 OS 에서 돌린다)
+python -m tests.exe_smoke dist/pibo-connect   # 묶은 실행 파일이 실제로 뜨는지 (CI 가 세 OS 에서 돌린다)
 ```
 
 기기 없이 전 경로를 돌려보려면 가짜 로봇을 띄운다:
@@ -233,14 +233,14 @@ python -m tests.mock_pibo --sn 1a2b3c4d --os piBrain_260915v1 \
 
 ```bash
 pip install -r requirements.txt pyinstaller
-pyinstaller build/pibo-connector.spec --noconfirm
-# dist/pibo-connector(.exe)
+pyinstaller build/pibo-connect.spec --noconfirm
+# dist/pibo-connect(.exe)
 ```
 
 `static/`(테마·폰트·이미지 포함, 약 3.4MB) 과 `examples/` 는 spec 의 `datas` 로
 같이 묶인다 — `config.py` 가 보는 자리(`_MEIPASS/static`, `_MEIPASS/examples`)와
 정확히 맞아야 하고, `tests/smoke.py` 와 `tests/exe_smoke.py` 가 폰트·이미지까지
-실제로 서빙되는지 확인한다. 윈도우 아이콘 `build/pibo-connector.ico` 는
+실제로 서빙되는지 확인한다. 윈도우 아이콘 `build/pibo-connect.ico` 는
 sense-lab 의 파이보 얼굴(`tools/portable/icon.ico`) 그대로다.
 
 CI 가 같은 스펙으로 빌드한다. `main` push 는 `nightly` 를, `v*` 태그는 정식

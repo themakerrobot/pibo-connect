@@ -20,9 +20,9 @@ HOWTO = """### 받기
 
 | 노트북 | 아래 **Assets** 에서 받을 파일 |
 |---|---|
-| **Windows** | `pibo-connector-windows.exe` |
-| macOS | `pibo-connector-macos` — 터미널에서 `chmod +x` 한 뒤, 첫 실행은 우클릭 → 열기 |
-| Linux | `pibo-connector-linux` — `chmod +x` 한 뒤 실행 |
+| **Windows** | `pibo-connect-windows.exe` |
+| macOS | `pibo-connect-macos` — 터미널에서 `chmod +x` 한 뒤, 첫 실행은 우클릭 → 열기 |
+| Linux | `pibo-connect-linux` — `chmod +x` 한 뒤 실행 |
 
 ### 실행하기
 
