@@ -17,10 +17,14 @@ Python Software Foundation 이름으로 Authenticode 서명이 되어 있어서
 SAC 가 '알 수 없는 파일' 로 볼 이유가 없다. 우리 코드는 `.py` 텍스트로만
 들어가고, 시작 버튼은 `.bat` 이다 — 둘 다 SAC 가 막는 대상이 아니다.
 
-그 전제가 진짜인지는 추측하지 않는다. 아래 `verify_signature()` 가 받아온
-python.exe 의 PE 인증서 테이블을 직접 뜯어보고, 윈도우에서는
-Get-AuthenticodeSignature 로 체인까지 확인한다. 서명이 없거나 PSF 가
-아니면 빌드를 세운다. 서명이 없는 묶음은 exe 와 다를 게 없으니까.
+그 전제가 진짜인지는 추측하지 않는다. `verify_signature()` 가 세 번 본다.
+  1. PE 의 Certificate Table 에 PKCS#7 서명 blob 이 있나  (어디서든)
+  2. 그 blob 안의 인증서가 Python Software Foundation 을 담고 있나  (어디서든)
+  3. Get-AuthenticodeSignature 로 체인과 Subject 까지  (윈도우, 되는 경우)
+1·2 는 못 넘어가면 빌드를 세운다. 3 은 러너에 따라 cmdlet 이 안 붙어서
+(windows-latest 의 Windows PowerShell 5.1 에서 Microsoft.PowerShell.Security
+로드가 실패한다) 못 했다고만 말하고 넘어간다 — 돌기만 하면 Valid 가
+아닐 때 세운다. 서명이 없는 묶음은 exe 와 다를 게 없으니까.
 
 묶음 구조 (zip 안)
 ------------------
@@ -189,73 +193,120 @@ README_TXT = """파이보 커넥터 — 풀어서 쓰는 묶음 (버전 {ver})
 
 # ── 서명 확인 ──────────────────────────────────────────────
 
-def pe_has_signature(exe: Path) -> tuple:
+# 서명 주체. 이 이름이 인증서 안에 없으면 python.org 배포본이 아니다.
+SIGNER = "Python Software Foundation"
+
+
+def pe_cert_blob(exe: Path):
     """PE 의 Certificate Table(데이터 디렉토리 4번) 을 직접 읽는다.
 
-    (signed, detail). 윈도우가 아닌 데서도 '서명이 붙어 있나' 는 확인된다.
+    (있나, PKCS#7 바이트, 설명). 윈도우가 아닌 데서도 확인된다.
     """
     b = exe.read_bytes()
     if b[:2] != b"MZ":
-        return False, "MZ 가 아니다"
+        return False, b"", "MZ 가 아니다"
     e_lfanew = struct.unpack_from("<I", b, 0x3C)[0]
     if b[e_lfanew:e_lfanew + 4] != b"PE\0\0":
-        return False, "PE 서명이 없다"
+        return False, b"", "PE 서명이 없다"
     magic = struct.unpack_from("<H", b, e_lfanew + 24)[0]
     if magic == 0x20B:            # PE32+
         dd = e_lfanew + 24 + 112
     elif magic == 0x10B:          # PE32
         dd = e_lfanew + 24 + 96
     else:
-        return False, f"알 수 없는 optional header magic 0x{magic:X}"
+        return False, b"", f"알 수 없는 optional header magic 0x{magic:X}"
     off, size = struct.unpack_from("<II", b, dd + 4 * 8)
     if not off or not size:
-        return False, "Certificate Table 이 비어 있다 (서명 없음)"
-    # WIN_CERTIFICATE: dwLength, wRevision, wCertificateType
+        return False, b"", "Certificate Table 이 비어 있다 (서명 없음)"
+    # WIN_CERTIFICATE: dwLength, wRevision, wCertificateType, 그 뒤가 PKCS#7
     _len, _rev, ctype = struct.unpack_from("<IHH", b, off)
     if ctype != 0x0002:           # WIN_CERT_TYPE_PKCS_SIGNED_DATA
-        return False, f"PKCS#7 이 아니다 (type 0x{ctype:04X})"
-    return True, f"Authenticode {size} bytes @ 0x{off:X}"
+        return False, b"", f"PKCS#7 이 아니다 (type 0x{ctype:04X})"
+    return True, b[off + 8:off + size], f"Authenticode {size} bytes @ 0x{off:X}"
+
+
+def pe_has_signature(exe: Path):
+    ok, _blob, detail = pe_cert_blob(exe)
+    return ok, detail
+
+
+def blob_names_signer(blob: bytes, who: str = SIGNER) -> bool:
+    """PKCS#7 안의 인증서가 이 이름을 담고 있나.
+
+    체인 검증은 아니다. 인증서의 Subject 문자열은 DER 의 PrintableString /
+    UTF8String 이라 바이트로 그대로 들어 있고, 그걸 찾는다. 파이썬만으로
+    어디서든 되기 때문에 이게 1차 관문이다.
+    """
+    return who.encode("utf-8") in blob or who.encode("utf-16-le") in blob
 
 
 def authenticode_subject(exe: Path):
-    """윈도우에서만: 체인까지 확인하고 서명 주체를 돌려준다. 못 하면 None."""
+    """윈도우에서 체인까지 확인한다. (status, subject) 또는 None.
+
+    None 은 '확인을 못 했다' 다 — 러너에 따라 Get-AuthenticodeSignature 가
+    안 붙는다 (windows-latest 의 Windows PowerShell 5.1 에서
+    Microsoft.PowerShell.Security 모듈 로드가 실패한 적이 있다).
+    그래서 pwsh 를 먼저 쓰고, 안 되면 못 했다고만 말한다 — 1차 관문은
+    이미 통과한 상태다.
+    """
     if sys.platform != "win32":
         return None
-    ps = (f"$s = Get-AuthenticodeSignature -LiteralPath '{exe}'; "
-          "Write-Output $s.Status; "
-          "Write-Output $s.SignerCertificate.Subject")
-    try:
-        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive",
-                              "-Command", ps],
-                             capture_output=True, text=True, timeout=120)
-    except Exception as ex:
-        raise SystemExit(f"!! 서명 확인을 못 했다: {ex}")
-    lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
-    if len(lines) < 2:
-        raise SystemExit(f"!! 서명 확인 출력이 이상하다: {out.stdout!r} {out.stderr!r}")
-    return lines[0], " ".join(lines[1:])
+    ps = ("Import-Module Microsoft.PowerShell.Security -ErrorAction SilentlyContinue; "
+          f"$s = Get-AuthenticodeSignature -LiteralPath '{exe}'; "
+          "Write-Output ('STATUS=' + $s.Status); "
+          "Write-Output ('SUBJECT=' + $s.SignerCertificate.Subject)")
+    for shell in ("pwsh", "powershell"):
+        try:
+            out = subprocess.run([shell, "-NoProfile", "-NonInteractive", "-Command", ps],
+                                 capture_output=True, text=True, timeout=180)
+        except Exception:
+            continue
+        status = subject = ""
+        for line in out.stdout.splitlines():
+            line = line.strip()
+            if line.startswith("STATUS="):
+                status = line[7:].strip()
+            elif line.startswith("SUBJECT="):
+                subject = line[8:].strip()
+        if status:
+            return status, subject
+        print(f"  (참고) {shell} 로 체인 확인 실패: "
+              f"{(out.stderr or out.stdout).strip().splitlines()[:1]}")
+    return None
 
 
 def verify_signature(exe: Path) -> None:
-    """서명이 없으면 빌드를 세운다. 이 묶음의 존재 이유가 서명이다."""
-    signed, detail = pe_has_signature(exe)
+    """서명이 없거나 PSF 것이 아니면 빌드를 세운다.
+
+    이 묶음의 존재 이유가 '실행되는 PE 는 PSF 가 서명한 것' 이다.
+    그게 아니면 exe 를 내는 것과 다를 게 없으니 묶음을 만들지 않는다.
+    """
+    signed, blob, detail = pe_cert_blob(exe)
     print(f"  서명(PE)  : {'있다' if signed else '없다'} — {detail}")
     if not signed:
         raise SystemExit(
             "!! 받아온 python.exe 에 Authenticode 서명이 없다.\n"
             "   서명된 python.exe 가 SAC 를 넘는 유일한 근거다. 묶음을 내지 않는다.")
+
+    named = blob_names_signer(blob)
+    print(f"  서명(주체): {'PSF 다' if named else 'PSF 가 아니다'} "
+          f"— 인증서에서 '{SIGNER}' 찾기")
+    if not named:
+        raise SystemExit(
+            f"!! 인증서에 '{SIGNER}' 가 없다. python.org 배포본이 아닐 수 있다.\n"
+            f"   {EMBED_URL}")
+
     got = authenticode_subject(exe)
     if got is None:
-        print("  서명(체인): 확인 생략 (윈도우가 아니다)")
+        print("  서명(체인): 확인 못 함 (윈도우가 아니거나 cmdlet 이 없다). "
+              "위 두 관문은 통과했다")
         return
     status, subject = got
     print(f"  서명(체인): {status} — {subject}")
     if status != "Valid":
         raise SystemExit(f"!! 서명 상태가 Valid 가 아니다: {status}")
-    if "Python Software Foundation" not in subject:
-        raise SystemExit(
-            f"!! 서명 주체가 PSF 가 아니다: {subject}\n"
-            "   python.org 가 아닌 데서 받아왔을 수 있다.")
+    if SIGNER not in subject:
+        raise SystemExit(f"!! 서명 주체가 PSF 가 아니다: {subject}")
 
 
 # ── 묶기 ───────────────────────────────────────────────────

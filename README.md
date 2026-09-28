@@ -211,10 +211,19 @@ SAC 는 파일 내용을 보지 않고 그 파일의 sha256 을 Microsoft 클라
 zip 묶음은 그 판정을 피하지 않고 **대상을 바꾼다.** 실행되는 PE 는 우리 exe 가 아니라
 python.org 배포본의 `python.exe` 이고, 그건 Python Software Foundation 이름으로
 Authenticode 서명이 되어 있다. 우리 코드는 `.py` 텍스트로만 들어가고 시작 버튼은
-`.bat` 이다. 그 전제를 추측으로 두지 않으려고 `build/make_portable.py` 가 받아온
-`python.exe` 의 PE 인증서 테이블을 직접 읽고, 윈도우에서는
-`Get-AuthenticodeSignature` 로 상태와 주체(PSF)까지 확인한다 — 서명이 없거나 PSF 가
-아니면 빌드를 세운다. 서명 없는 묶음은 exe 와 다를 게 없으니까.
+`.bat` 이다. 그 전제를 추측으로 두지 않으려고 `build/make_portable.py` 가 세 번 본다.
+
+1. PE 의 Certificate Table 에 PKCS#7 서명 blob 이 있나 — 파이썬만으로, 어디서든
+2. 그 blob 의 인증서가 `Python Software Foundation` 을 담고 있나 — 어디서든
+3. `Get-AuthenticodeSignature` 로 체인과 Subject 까지 — 윈도우에서, 되는 경우
+
+1·2 를 못 넘으면 빌드를 세운다. 3 은 러너에 따라 cmdlet 이 안 붙어서
+(`windows-latest` 의 Windows PowerShell 5.1 에서 `Microsoft.PowerShell.Security`
+로드가 실패한다) `pwsh` → `powershell` 순으로 시도하고, 둘 다 안 되면 못 했다고만
+말한다. 돌기만 하면 `Valid` 가 아닐 때 세운다. 서명 없는 묶음은 exe 와 다를 게 없으니까.
+
+실측: `python-3.11.9-embed-amd64.zip` 의 `python.exe` 는 `Authenticode 12056 bytes`
+서명을 갖고 있다 (CI 로그에서 확인).
 
 `.bat` 은 **ASCII 만 쓴다.** cmd.exe 는 배치 파일을 콘솔 코드페이지로 읽어서, UTF-8
 한글을 넣으면 `chcp 65001` 을 먼저 해도 깨진다 (한글 안 쓰는 윈도우에서 특히).

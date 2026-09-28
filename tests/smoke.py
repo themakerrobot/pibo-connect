@@ -286,7 +286,7 @@ def test_portable():
     # PE 인증서 테이블을 읽는 오프셋 계산. 이게 틀리면 서명 없는 python.exe 를
     # '서명 있다' 로 통과시켜 묶음의 존재 이유가 사라진다. 합성 PE 로 확인한다.
     import struct
-    def fake_pe(cert_off, cert_size, ctype=0x0002, magic=0x20B):
+    def fake_pe(cert_off, cert_size, ctype=0x0002, magic=0x20B, payload=b""):
         e = 0x80
         b = bytearray(0x400)
         b[0:2] = b"MZ"
@@ -297,18 +297,31 @@ def test_portable():
         struct.pack_into("<II", b, dd + 4 * 8, cert_off, cert_size)  # 4번 = Certificate
         if cert_off:
             struct.pack_into("<IHH", b, cert_off, cert_size, 0x0200, ctype)
+            b[cert_off + 8:cert_off + 8 + len(payload)] = payload   # PKCS#7 자리
         return bytes(b)
 
     with tempfile.TemporaryDirectory() as td:
         def ask(data):
             f = Path(td) / "t.exe"
             f.write_bytes(data)
-            return mp.pe_has_signature(f)
+            return mp.pe_cert_blob(f)
         check("서명 있는 PE32+ 를 알아본다", ask(fake_pe(0x200, 0x100))[0] is True)
         check("서명 있는 PE32 도 알아본다", ask(fake_pe(0x200, 0x100, magic=0x10B))[0] is True)
         check("Certificate Table 이 비면 '서명 없음'", ask(fake_pe(0, 0))[0] is False)
         check("PKCS#7 이 아니면 거른다", ask(fake_pe(0x200, 0x100, ctype=0x0001))[0] is False)
         check("PE 가 아니면 거른다", ask(b"\x7fELF" + bytes(0x400))[0] is False)
+        # 잘라낸 blob 이 PKCS#7 자리인지. 여기서 주체 이름을 찾으므로 어긋나면
+        # 'PSF 가 아니다' 로 멀쩡한 배포본을 거른다.
+        mark = mp.SIGNER.encode()
+        got = ask(fake_pe(0x200, 0x100, payload=mark))[1]
+        check("blob 이 WIN_CERTIFICATE 헤더 뒤부터다", got.startswith(mark), got[:40])
+        check("blob 길이가 size - 8 이다", len(got) == 0x100 - 8, len(got))
+
+    # 주체 이름 찾기. 체인 확인이 안 되는 러너에서 이게 1차 관문이다.
+    check("PSF 이름을 찾는다", mp.blob_names_signer(b"xx" + mp.SIGNER.encode() + b"yy"))
+    check("UTF-16 로 들어 있어도 찾는다",
+          mp.blob_names_signer(b"\x00" + mp.SIGNER.encode("utf-16-le")))
+    check("다른 이름은 거른다", not mp.blob_names_signer(b"Some Other Corp, Ltd."))
 
 
 def test_server():
