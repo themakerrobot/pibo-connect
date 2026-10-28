@@ -15,7 +15,7 @@ from aiohttp import web
 
 
 def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = False,
-          broken_wifi: bool = False):
+          broken_wifi: bool = False, temp: str = "48.3"):
     sio = socketio.AsyncServer(async_mode="aiohttp", cors_allowed_origins="*")
     app80 = web.Application()
     sio.attach(app80, socketio_path="/socket.io")
@@ -24,14 +24,14 @@ def build(sn: str, os_version: str, ip: str, with_device: bool, legacy: bool = F
     if legacy:
         # 구형 240701v1 (9칸): … WLAN0, SSID0, ETH1. PSK 칸이 아예 없다.
         system_row = [
-            "10000000" + sn, os_version, "12345.6", "48.3'C", "3900000", "2100000",
+            "10000000" + sn, os_version, "12345.6", f"{temp}'C", "3900000", "2100000",
             ip, "classroom-5g", "",
         ]
     else:
         # 신형 (12칸). 인덱스 9 는 PSK 평문이다 — 커넥터가 이걸 받고도
         # 어디에도 남기지 않는지 보려고 일부러 넣는다.
         system_row = [
-            "10000000" + sn, os_version, "12345.6", "48.3'C", "3900000", "2100000",
+            "10000000" + sn, os_version, "12345.6", f"{temp}'C", "3900000", "2100000",
             ip, "", "classroom-5g", "LeakCanary!234", "", "wpa-psk",
         ]
 
@@ -166,7 +166,7 @@ def build_tools_decoy():
 
 async def run(args):
     app80, app8080 = build(args.sn, args.os, args.ip, not args.no_device, args.legacy,
-                           args.broken_wifi)
+                           args.broken_wifi, args.temp)
     r1 = web.AppRunner(app80)
     await r1.setup()
     await web.TCPSite(r1, args.bind, args.ide_port).start()
@@ -193,6 +193,8 @@ def main():
     ap.add_argument("--ide-port", type=int, default=0, help="0 이면 판에 맞춰 고른다")
     ap.add_argument("--sys-port", type=int, default=8080)
     ap.add_argument("--no-device", action="store_true")
+    # 여러 대를 띄워 화면을 볼 때 온도가 전부 같으면 가짜 티가 난다.
+    ap.add_argument("--temp", default="48.3", help="보고할 CPU 온도 (숫자만)")
     ap.add_argument("--no-tools-decoy", dest="tools_decoy", action="store_false",
                     help="구형 흉내에서 80 번 tools 서버를 띄우지 않는다")
     ap.add_argument("--broken-wifi", action="store_true",
