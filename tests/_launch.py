@@ -45,9 +45,13 @@ class Server:
         # 'Terminate orphan process (pibo-connect)' 가 찍히던 이유다.
         # POSIX 는 새 세션으로 띄워 그룹째, 윈도우는 taskkill /T 로 트리째 죽인다.
         kw = {} if os.name == "nt" else {"start_new_session": True}
+        # 테스트는 바깥으로 나가지 않는다. 새 버전 확인을 꺼 둔다 —
+        # 켜 두면 CI 가 GitHub 을 두드리고, 오프라인에서는 그냥 느려진다.
+        env = self.env if self.env is not None else dict(os.environ)
+        env.setdefault("PIBO_CONNECT_NO_UPDATE_CHECK", "1")
         self.proc = subprocess.Popen(self.cmd, stdout=self._fh,
                                      stderr=subprocess.STDOUT, cwd=self.cwd,
-                                     env=self.env, **kw)
+                                     env=env, **kw)
         return self
 
     def __exit__(self, *exc) -> None:

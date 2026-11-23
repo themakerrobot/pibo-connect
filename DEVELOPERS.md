@@ -94,6 +94,59 @@ IDE 의 `load_directory` · `load` 이벤트를 그대로 쓴다.
 15대 동시 카메라는 대당 0.3~0.8 Mbps × airtime 2배 ≈ 24 Mbps.
 5GHz 80MHz 한 채널이면 여유다.
 
+## 실행 중 가드 — 한 번 크게 틀렸던 곳
+
+`Runner.busy()` 가 `Job.task` 를 같이 봤는데 **그 필드를 아무도 채우지 않았다.**
+늘 `None` 이라 `busy()` 는 항상 False 였고, 그래서
+
+- `/api/run`·`/api/sync`·`/api/run_path` 의 `409 이미 실행 중이다` 가드가 한 번도
+  동작하지 않았다. 화면의 버튼 비활성화는 `app.js` 의 지역 변수로만 막고 있어서,
+  **탭을 하나 더 열거나 실행 중에 새로고침하면** 그 창은 `busy=false` 를 받아
+  같은 로봇에 두 job 이 겹쳤다
+- `stop()` 의 `job.task.cancel()` 은 도달 불가 코드였다
+
+지금은 `busy()` 가 `self.job is not None` 이다. `run()`/`sync()` 의 `finally` 가
+job 을 지우므로 그걸로 충분하고, 채워지지 않는 필드에 기대지 않는다.
+
+같이 고쳐야 했던 것: `busy()` 만 고치면 [멈춤] 뒤에 잠긴다. 기다리는 쪽이
+`link.wait_exit(timeout)` 하나만 보고 있었으므로, 로봇이 끝났다고 말해줄
+때까지(기본 300초) job 이 남아 다음 [실행!] 이 409 로 막힌다. 그래서 `Job` 에
+`stop_event` 를 두고 `_wait_one()` 이 둘을 `FIRST_COMPLETED` 로 경주시킨다.
+[멈춤] 이 이기면 그 로봇은 `stopped` 다.
+
+`tests/smoke.py` 의 `test_busy` 가 이 셋을 지킨다 — job 유무로 busy 가 갈리는지,
+`Job` 에 `task` 필드가 **없는지**, stop 이 `stop_event` 를 올리고 기다리는 쪽이
+그걸 같이 보는지.
+
+## 숨긴 버튼이 안 숨던 것
+
+`maker-ui.css` 의 `.db` 는 `display:inline-flex` 라 브라우저 기본
+`[hidden]{display:none}` 을 이긴다. `hidden` 을 걸어도 버튼이 그대로 보였다.
+`maker-ui.css` 는 sense-lab 에서 복사해 오는 규격 파일이라 손대지 않고,
+`style.css` 에서 `.db[hidden]{display:none}` 으로 받는다. (sense-lab 쪽 규격도
+같은 문제를 갖고 있으니 거기서 고치면 이 줄은 지워도 된다.)
+
+목 테스트로는 안 잡혔다. 서버는 `hidden` 속성을 제대로 줬고 DOM 프로퍼티도
+`true` 였다 — 실제로 칠해 봐야 보이는 종류다. 그래서 e2e 를 크로미움으로 돌렸다.
+
+## 새 버전 알림
+
+`pibo_connector/update.py`. 켤 때 뒤에서 한 번만 GitHub 릴리스를 보고, 더 새
+버전이면 `hub` 로 알려 화면 위에 한 줄 띄운다. 교실은 오프라인이 기본이라
+
+- 기동을 막지 않는다 (`lifespan` 에서 `create_task`, 끝날 때 취소)
+- 실패하면 아무 말도 하지 않는다. 결과가 없는 것과 같다
+- 숫자를 못 뽑는 태그(`nightly` 등)는 새 버전으로 치지 않는다 — 틀려서
+  빨간 줄을 띄우는 것보다 조용한 쪽이 낫다
+- `PIBO_CONNECT_NO_UPDATE_CHECK=1` 이면 아예 부르지 않는다.
+  `tests/_launch.py` 가 테스트에 이걸 걸어 CI 가 밖으로 나가지 않게 한다
+
+## 로그 저장
+
+`GET /api/logs.txt` — 돌고 있으면 지금 job 의, 아니면 마지막 실행의 로봇별
+**전체** 기록이다 (화면에 보이는 마지막 줄이 아니다). 첨부로 내려가고 파일
+이름은 ASCII 다 (`pibo-output-YYYYMMDD-HHMM.txt`).
+
 ## 옛날 OS 로봇
 
 **기준: 2024년 판(`240110v4`) 이상.** 설정은 없고, 찾을 때 확인해서 맞춘다.

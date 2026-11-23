@@ -342,6 +342,53 @@ def test_portable():
     check("다른 이름은 거른다", not mp.blob_names_signer(b"Some Other Corp, Ltd."))
 
 
+def test_busy():
+    """실행 중 가드. Job.task 를 아무도 안 채워서 busy() 가 늘 False 였다 —
+    그래서 /api/run 의 409 가 죽어 있었고, 탭을 하나 더 열면 같은 로봇에
+    두 job 이 겹쳤다."""
+    print("실행 중 가드")
+    from pibo_connector.runner import Job, Runner
+    r = Runner(Fleet(path=Path(tempfile.gettempdir()) / "smoke_busy.json"))
+    check("아무것도 안 돌 때는 안 바쁘다", r.busy() is False)
+    r.job = Job("run", ["cd488e95"], lambda _m: None)
+    check("job 이 있으면 바쁘다", r.busy() is True)
+    check("busy 가 Job 의 없는 필드를 보지 않는다", not hasattr(r.job, "task"))
+    r.job = None
+    check("job 이 사라지면 안 바쁘다", r.busy() is False)
+
+    # [멈춤] 은 기다리던 쪽을 곧바로 풀어야 한다. 안 그러면 로봇이 끝났다고
+    # 말해줄 때까지(기본 300초) 다음 [실행!] 이 409 로 막힌다.
+    src = (ROOT / "pibo_connector" / "runner.py").read_text(encoding="utf-8")
+    check("stop 이 stop_event 를 올린다", "job.stop_event.set()" in src)
+    check("기다리는 쪽이 stop_event 와 경주한다",
+          "job.stop_event.wait()" in src and "FIRST_COMPLETED" in src)
+
+
+def test_update_compare():
+    """새 버전 비교. 숫자를 못 뽑으면 조용히 넘어가야 한다 —
+    nightly 를 '새 버전' 이라고 띄우면 선생님만 헷갈린다."""
+    print("새 버전 비교")
+    from pibo_connector import update
+    for latest, cur, want in (
+            ("v0.6.0", "0.5.3", True), ("0.5.4", "0.5.3", True),
+            ("v0.5.3", "0.5.3", False), ("v0.5.2", "0.5.3", False),
+            ("v0.10.0", "0.9.9", True), ("v1.0", "0.5.3", True),
+            ("nightly", "0.5.3", False), ("", "0.5.3", False),
+            ("v0.6.0", "", False)):
+        check(f"{latest or '(빈값)'} > {cur or '(빈값)'} → {want}",
+              update.newer(latest, cur) is want)
+    import os
+    old = os.environ.get(update.ENV_OFF)
+    os.environ[update.ENV_OFF] = "1"
+    try:
+        check("환경변수로 끌 수 있다", update.disabled() is True)
+    finally:
+        if old is None:
+            os.environ.pop(update.ENV_OFF, None)
+        else:
+            os.environ[update.ENV_OFF] = old
+
+
 def test_server():
     """소스 실행이 실제로 뜨는지. 포트는 고정으로 가정하지 않는다 —
     _free_port 가 막힌 포트를 피해 옮기므로 서버가 찍는 주소를 읽는다."""
@@ -380,13 +427,39 @@ def test_server():
                 check(f"서빙 {path}", False, str(ex))
         check("화면이 학습지 테마를 부른다", 'maker-ui.css' in html and 'fonts/pretendard.css' in html)
         check("파이보 얼굴 파비콘", 'img/favicon.png' in html)
+        check("결과 패널에 로그 저장·다시 버튼이 있다",
+              'id="btn-savelog"' in html and 'id="btn-retry"' in html)
+        check("머리에 새 버전 알림 자리가 있다", 'id="st-update"' in html)
+        # maker-ui 의 .db 는 display:inline-flex 라 브라우저 기본
+        # [hidden]{display:none} 을 이긴다. 받아주지 않으면 hidden 을 걸어도
+        # 버튼이 그대로 보인다 — 실제로 그랬다.
+        try:
+            _, css = srv.get("/static/style.css", 5)
+            check(".db[hidden] 을 받아준다", ".db[hidden]" in css)
+        except Exception as ex:
+            check(".db[hidden] 을 받아준다", False, str(ex))
+        check("info 에 update 칸이 있다 (못 찾았으면 None)",
+              "update" in info and info["update"] is None, info.get("update"))
+
+        # 로그 저장 — 실행 전에도 받아져야 한다 (빈 머리글만 나온다)
+        try:
+            import urllib.request
+            with urllib.request.urlopen(srv.base + "/api/logs.txt", timeout=5) as r:
+                body = r.read().decode("utf-8", "replace")
+                disp = r.headers.get("Content-Disposition", "")
+            check("로그 저장이 200 이고 첨부로 내려온다", "attachment" in disp, disp)
+            check("로그에 버전이 적힌다", "pibo-connect" in body, body[:80])
+            check("로그 파일 이름이 ASCII 다", disp.isascii(), disp)
+        except Exception as ex:
+            check("로그 저장", False, str(ex))
 
 
 def main() -> int:
     utf8_console(sys.stdout, sys.stderr)
     for fn in (test_parse_system, test_detect, test_store, test_ap_rx,
                test_wrap, test_launcher, test_release_notes, test_spec_paths,
-               test_portable, test_server):
+               test_portable, test_busy, test_update_compare,
+               test_server):
         fn()
     print()
     if FAIL:

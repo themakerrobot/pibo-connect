@@ -18,6 +18,7 @@
   <span class="badge" id="st-up" title="켜진 로봇"><b class="num">0</b> <span data-t="up">켜짐</span></span>
   <span class="badge" id="st-sel" title="고른 로봇"><b class="num">0</b> <span data-t="selected">고름</span></span>
   <span class="badge job" id="st-job" hidden></span>
+  <a class="badge up-new" id="st-update" hidden target="_blank" rel="noreferrer"></a>
   <span class="spacer"></span>
   <span class="badge" id="conn"><span data-t="conn_off">연결 끊김</span></span>
   <button id="langToggle" class="lang-toggle">EN</button>
@@ -161,6 +162,8 @@
         <span data-t="output">결과</span>
         <span class="hint inline" id="run-msg"></span>
         <span class="spacer"></span>
+        <button class="db sm" id="btn-retry" data-t="retry" hidden>안 된 것만 다시</button>
+        <button class="db sm" id="btn-savelog" data-t="save_log">로그 저장</button>
         <button class="db sm" id="btn-expand" data-t="expand_all">모두 펼치기</button>
         <button class="db sm danger" id="btn-clear" data-t="clear">지우기</button>
       </div>

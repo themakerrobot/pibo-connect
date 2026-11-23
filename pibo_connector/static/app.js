@@ -26,6 +26,7 @@ const EN = {
   warn_shared: '⚠ Running pauses the robot\'s other features (tools, recognition, AI chat). For AI chat, call Dialog.start_llm first. The robot\'s coding screen (IDE) shows the same output, and pressing Run there stops this code.',
   warn_sync: 'Start together: everyone gets ready first, then one signal starts them all. Put a # --- GO --- line in the code — above is setup, below is the action. If the router blocks the signal it ends in [timeout]; use [Run!] then.',
   output: 'Results', expand_all: 'Expand all', collapse_all: 'Collapse all', clear: 'Clear',
+  save_log: 'Save log', retry: 'Retry failed',
   out_empty: 'After running, each robot\'s last line shows here. Click to see everything.',
   rules_title: 'Robot kind settings',
   rules_note: 'If the robot\'s version name contains this text, it is that kind. Longer text is checked first — <span class="kbd">pibrain</span> before <span class="kbd">pibo</span>.',
@@ -55,6 +56,13 @@ const stateLabel = (st) => (STATE[st] ? T(STATE[st][0], STATE[st][1]) : st || ''
 /* ── 상태 ─────────────────────────────────────────────────────────── */
 let fleet = [], roster = null, selected = new Set(), outputs = {};
 let busy = false, jobStart = 0, jobKind = '', jobEverRan = false;
+// 마지막으로 보낸 실행 요청. [안 된 것만 다시] 가 targets 만 바꿔서 그대로 다시 보낸다.
+let lastReq = null;
+// 다시 해볼 만한 상태. renderOut 이 쓰므로 그보다 먼저 있어야 한다.
+const BAD = ['error', 'timeout', 'no-ip', 'stopped'];
+const failedSns = () => Object.keys(outputs).filter((sn) => BAD.includes((outputs[sn] || {}).state));
+// [안 된 것만 다시] 일 때는 먼저 잘된 로봇의 결과를 지우지 않는다.
+let keepOut = false;
 let mode = 'new', sortKey = 'name', sortDesc = false, onlyUp = false;
 try {
   sortKey = localStorage.getItem('sortKey') || 'name';
@@ -109,6 +117,7 @@ function handle(m) {
   switch (m.type) {
     case 'hello':
       $('#ver').textContent = 'v' + m.version;
+      showUpdate(m.update);
       if (!$('#subnet').value && m.subnets && m.subnets.length) $('#subnet').value = m.subnets[0];
       fleet = m.fleet || []; roster = m.roster || null; busy = !!m.busy;
       render(); break;
@@ -135,14 +144,26 @@ function handle(m) {
       if ((outputs[m.sn] || {}).open) loadFull(m.sn);
       renderOut(); break;
     case 'job': onJob(m); break;
+    case 'update': showUpdate(m); break;
   }
+}
+
+/* 새 버전이 나왔을 때만 머리에 한 줄. 오프라인이면 아무것도 안 뜬다. */
+function showUpdate(u) {
+  const el = $('#st-update');
+  if (!u || !u.latest) { el.hidden = true; return; }
+  el.textContent = T(`새 버전 v${u.latest} 나왔어요`, `v${u.latest} is out`);
+  el.href = u.url || '#';
+  el.hidden = false;
 }
 
 function onJob(m) {
   const jobLabel = { start: T('시작', 'start'), running: T('실행 중', 'running'), preparing: T('준비 중', 'preparing'),
     trigger: T('출발 신호', 'go signal'), stopped: T('멈췄어요', 'stopped') };
   if (m.state === 'start') {
-    busy = true; jobEverRan = true; jobStart = Date.now(); jobKind = m.kind || 'run'; outputs = {};
+    busy = true; jobEverRan = true; jobStart = Date.now(); jobKind = m.kind || 'run';
+    if (!keepOut) outputs = {};
+    keepOut = false;
     (m.targets || []).forEach((sn) => { outputs[sn] = { state: 'pending', tail: '' }; });
   }
   if (m.state === 'trigger') {
@@ -308,6 +329,10 @@ function renderOut() {
   $('#out-empty').style.display = sns.length ? 'none' : '';
   const anyOpen = sns.some((s) => outputs[s].open);
   $('#btn-expand').textContent = anyOpen ? T('모두 접기', 'Collapse all') : T('모두 펼치기', 'Expand all');
+  const bad = failedSns().length;
+  $('#btn-retry').hidden = busy || !lastReq || !bad;
+  $('#btn-retry').textContent = T(`안 된 ${bad}대만 다시`, `Retry ${bad}`);
+  $('#btn-savelog').disabled = !sns.length;
   $('#out').innerHTML = sns.map((sn) => {
     const o = outputs[sn] || {}, r = fleet.find((x) => x.sn === sn) || {};
     const who = r.name ? `${esc(r.name)} <span class="mono">${sn}</span>` : `<span class="mono">${sn}</span>`;
@@ -446,8 +471,10 @@ const needPath = () => {
 $('#btn-run').onclick = () => guard(async () => {
   const tg = targets(); if (!tg.length) return;
   $('#run-msg').textContent = T('보내는 중…', 'sending…');
-  if (mode === 'file') await api('api/run_path', { targets: tg, path: needPath() });
-  else await api('api/run', { targets: tg, code: $('#code').value, codetype: $('#codetype').value });
+  lastReq = mode === 'file'
+    ? { ep: 'api/run_path', body: { path: needPath() } }
+    : { ep: 'api/run', body: { code: $('#code').value, codetype: $('#codetype').value } };
+  await api(lastReq.ep, Object.assign({ targets: tg }, lastReq.body));
 });
 $('#btn-sync').onclick = () => guard(async () => {
   const tg = targets(); if (!tg.length) return;
@@ -460,7 +487,8 @@ $('#btn-sync').onclick = () => guard(async () => {
     toast(T(`${firstTarget()} 로봇의 파일을 읽어서 다 같이 시작해요`, `read from ${firstTarget()} for sync run`), '', 3000);
   }
   $('#run-msg').textContent = T('준비 중…', 'preparing…');
-  await api('api/sync', { targets: tg, code });
+  lastReq = { ep: 'api/sync', body: { code } };
+  await api(lastReq.ep, Object.assign({ targets: tg }, lastReq.body));
 });
 $('#btn-stop').onclick = () => guard(async () => { await api('api/stop', { targets: targets() }); busy = false; renderButtons(); renderStrip(); });
 $('#btn-pull').onclick = () => guard(async () => {
@@ -481,7 +509,27 @@ $('#btn-expand').onclick = () => {
   const sns = Object.keys(outputs), open = !sns.some((s) => outputs[s].open);
   sns.forEach((s) => { outputs[s].open = open; if (open && outputs[s].full == null) loadFull(s); }); renderOut();
 };
-$('#btn-clear').onclick = () => { if (!busy) { outputs = {}; $('#run-msg').textContent = ''; renderOut(); render(); } };
+$('#btn-clear').onclick = () => { if (!busy) { outputs = {}; $('#run-msg').textContent = ''; lastReq = null; renderOut(); render(); } };
+
+/* 로그 저장 — 서버가 로봇별 전체 로그를 텍스트 한 장으로 준다.
+   화면에 있는 꼬리말이 아니라 서버가 들고 있는 전체 기록이다. */
+$('#btn-savelog').onclick = () => {
+  const a = document.createElement('a');
+  a.href = 'api/logs.txt' + (TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '');
+  a.download = '';
+  a.click();
+};
+
+$('#btn-retry').onclick = () => guard(async () => {
+  if (!lastReq) return;
+  const tg = failedSns().filter((sn) => { const r = fleet.find((x) => x.sn === sn); return r && isUp(r); });
+  if (!tg.length) { toast(T('다시 할 로봇이 없어요', 'nothing to retry'), 'warn'); return; }
+  $('#run-msg').textContent = T(`${tg.length}대만 다시 보내는 중…`, `retrying ${tg.length}…`);
+  keepOut = true;
+  try {
+    await api(lastReq.ep, Object.assign({ targets: tg }, lastReq.body));
+  } catch (e) { keepOut = false; throw e; }
+});
 
 /* ── 목록 저장 / 불러오기 ─────────────────────────────────────────── */
 $('#btn-export').onclick = () => guard(async () => {

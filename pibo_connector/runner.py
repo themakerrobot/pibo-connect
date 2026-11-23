@@ -101,8 +101,11 @@ class Job:
         self.links: Dict[str, robot.RobotLink] = {}
         self.records: Dict[str, str] = {sn: "" for sn in targets}
         self.state: Dict[str, str] = {sn: "pending" for sn in targets}
-        self.task: Optional[asyncio.Task] = None
         self.cancelled = False
+        # [멈춤] 을 누르면 선다. 로봇에 stop 을 보내는 것과 별개로, 끝나기를
+        # 기다리던 쪽도 곧바로 풀어줘야 한다 — 안 그러면 로봇이 끝났다고
+        # 말해줄 때까지(기본 300초) '이미 실행 중' 으로 잠긴다.
+        self.stop_event = asyncio.Event()
 
     def snapshot(self) -> dict:
         # 로봇별 상태는 'states' 다. 'state' 는 job 이벤트의 단계(start/end…)가
@@ -125,8 +128,14 @@ class Runner:
         self.last_records: Dict[str, str] = {}
 
     def busy(self) -> bool:
-        return self.job is not None and self.job.task is not None \
-            and not self.job.task.done()
+        """실행 중인가. run()/sync() 의 finally 가 job 을 지우므로 이걸로 충분하다.
+
+        예전에는 Job.task 를 같이 봤는데 그 필드를 아무도 채우지 않아서 **늘
+        False** 였다. 그래서 /api/run·sync·run_path 의 409 가드가 한 번도
+        동작하지 않았고, 탭을 하나 더 열거나 실행 중에 새로고침하면 같은
+        로봇에 두 job 이 겹쳤다. tests/smoke.py 가 이제 이걸 확인한다.
+        """
+        return self.job is not None
 
     # ── 공통 ────────────────────────────────────────────────────────
     async def _open(self, job: Job, sn: str) -> Optional[robot.RobotLink]:
@@ -155,6 +164,30 @@ class Runner:
             self.emit({"type": "run", "sn": sn, "state": "error", "detail": str(ex)})
             return None
 
+    async def _wait_one(self, job: Job, sn: str, link: robot.RobotLink,
+                        timeout: float) -> None:
+        """로봇이 끝나거나, [멈춤] 을 누르거나, 시간이 다 될 때까지."""
+        waiter = asyncio.ensure_future(link.wait_exit(timeout))
+        stopper = asyncio.ensure_future(job.stop_event.wait())
+        try:
+            done, _ = await asyncio.wait({waiter, stopper},
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if waiter in done:
+                job.state[sn] = "done" if waiter.result() else "timeout"
+            else:
+                job.state[sn] = "stopped"
+        finally:
+            for t in (waiter, stopper):
+                if not t.done():
+                    t.cancel()
+        job.records[sn] = link.record
+        self.emit({"type": "run", "sn": sn, "state": job.state[sn],
+                   "tail": tail_of(link.record)})
+
+    def records(self) -> Dict[str, str]:
+        """지금 것이 있으면 지금 것, 없으면 마지막 실행의 로봇별 전체 로그."""
+        return dict(self.job.records) if self.job else dict(self.last_records)
+
     async def _close_all(self, job: Job) -> None:
         for link in job.links.values():
             try:
@@ -182,14 +215,8 @@ class Runner:
             self.emit({"type": "job", "state": "running",
                        "targets": [sn for sn, _ in live]})
 
-            async def wait_one(sn: str, link: robot.RobotLink):
-                done = await link.wait_exit(timeout)
-                job.state[sn] = "done" if done else "timeout"
-                job.records[sn] = link.record
-                self.emit({"type": "run", "sn": sn, "state": job.state[sn],
-                           "tail": tail_of(link.record)})
-
-            await asyncio.gather(*(wait_one(sn, l) for sn, l in live))
+            await asyncio.gather(*(self._wait_one(job, sn, l, timeout)
+                                   for sn, l in live))
             return {"ok": True, **job.snapshot()}
         finally:
             await self._close_all(job)
@@ -249,14 +276,8 @@ class Runner:
             self.emit({"type": "job", "state": "trigger", "sent_to": sent,
                        "ready": sorted(ready), "not_ready": not_ready})
 
-            async def wait_one(sn: str, link: robot.RobotLink):
-                done = await link.wait_exit(timeout)
-                job.state[sn] = "done" if done else "timeout"
-                job.records[sn] = link.record
-                self.emit({"type": "run", "sn": sn, "state": job.state[sn],
-                           "tail": tail_of(link.record)})
-
-            await asyncio.gather(*(wait_one(sn, l) for sn, l in live))
+            await asyncio.gather(*(self._wait_one(job, sn, l, timeout)
+                                   for sn, l in live))
             return {"ok": True, "ready": sorted(ready), "not_ready": not_ready,
                     "trigger_sent_to": sent, **job.snapshot()}
         finally:
@@ -271,8 +292,9 @@ class Runner:
         job = self.job
         if job:
             job.cancelled = True
-            if job.task and not job.task.done():
-                job.task.cancel()
+            # 기다리던 쪽을 곧바로 푼다. 이게 없으면 로봇이 끝났다고 말해줄
+            # 때까지 job 이 남아 다음 [실행!] 이 409 로 막힌다.
+            job.stop_event.set()
 
         async def one(sn: str):
             ip, ide_port = self.fleet.target_of(sn)

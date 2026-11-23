@@ -11,10 +11,10 @@ import time
 from typing import Any, Dict, List, Optional, Set
 
 from fastapi import Body, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, config, detect, net, robot, scan
+from . import __version__, config, detect, net, robot, scan, update
 from .runner import Runner, normalize_path
 from .store import Fleet
 
@@ -53,7 +53,21 @@ def create_app(token: str = "") -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         hub.loop = asyncio.get_running_loop()
-        yield
+        # 새 버전 확인. 기동을 막지 않게 뒤에서 돌리고, 결과가 나오면 그때
+        # 열려 있는 화면에 알린다. 오프라인이면 조용히 끝난다.
+        task = asyncio.create_task(_check_update())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(Exception):
+                await task
+
+    async def _check_update() -> None:
+        found = await update.check(__version__)
+        if found:
+            app.state.update = found
+            hub.emit({"type": "update", **found})
 
     hub = Hub()
     app = FastAPI(title="pibo-connect", version=__version__, docs_url=None,
@@ -65,6 +79,7 @@ def create_app(token: str = "") -> FastAPI:
     app.state.fleet = fleet
     app.state.runner = runner
     app.state.token = token
+    app.state.update = None
 
     static = config.static_dir()
     if not static.is_dir():
@@ -109,7 +124,8 @@ def create_app(token: str = "") -> FastAPI:
                  "subnets": net.local_subnets(),
                  "fleet": fleet.list(),
                  "roster": fleet.roster_status(),
-                 "busy": runner.busy()}, ensure_ascii=False))
+                 "busy": runner.busy(),
+                 "update": app.state.update}, ensure_ascii=False))
             while True:
                 await websocket.receive_text()   # 핑만 받는다
         except WebSocketDisconnect:
@@ -133,6 +149,7 @@ def create_app(token: str = "") -> FastAPI:
             "trigger_port": config.TRIG_PORT,
             "sync_mark": config.SYNC_MARK,
             "busy": runner.busy(),
+            "update": app.state.update,
         }
 
     @app.get("/api/fleet")
@@ -381,6 +398,27 @@ def create_app(token: str = "") -> FastAPI:
         if not sns:
             sns = [r["sn"] for r in fleet.list() if r.get("ip")]
         return await runner.stop(sns)
+
+    @app.get("/api/logs.txt")
+    async def api_logs(request: Request):
+        """로봇별 전체 로그를 텍스트 한 장으로. 수업 끝나고 확인할 때 쓴다."""
+        check(request)
+        recs = runner.records()
+        names = {r["sn"]: r for r in fleet.list()}
+        head = (f"pibo-connect {__version__}\n"
+                f"{time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"로봇 {len(recs)}대\n")
+        parts = [head]
+        for sn in sorted(recs):
+            r = names.get(sn, {})
+            who = " ".join(x for x in (r.get("name"), sn, r.get("ip")) if x)
+            parts.append("\n" + "─" * 60 + f"\n{who}\n" + "─" * 60 + "\n"
+                         + (recs[sn] or "(아무것도 안 나왔어요)") + "\n")
+        stamp = time.strftime("%Y%m%d-%H%M")
+        return PlainTextResponse(
+            "".join(parts),
+            headers={"Content-Disposition":
+                     f'attachment; filename="pibo-output-{stamp}.txt"'})
 
     @app.get("/api/output/{sn}")
     async def api_output(request: Request, sn: str):

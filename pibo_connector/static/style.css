@@ -172,3 +172,13 @@ header .badge, header #langToggle { flex-shrink: 0; }
 .mk-table td, .mk-table th { white-space: nowrap; }
 .mk-table td.mono[title] { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }   /* 버전은 길면 … */
 .pan .pb { overflow-x: auto; }                                                            /* 폰에서 표는 옆으로 민다 */
+
+/* 새 버전 알림 — 머리에 한 줄. 경고가 아니라 안내라 빨강을 쓰지 않는다. */
+header .badge.up-new { color: var(--acc-ink); border-color: var(--acc); background: var(--acc-soft);
+  text-decoration: none; cursor: pointer; }
+header .badge.up-new:hover { background: #fff; }
+
+/* maker-ui 의 .db 는 display:inline-flex 라 브라우저 기본 [hidden]{display:none}
+   을 이긴다. hidden 을 걸어도 버튼이 그대로 보인다 — 실제로 그랬다.
+   규격 파일(maker-ui.css)은 sense-lab 에서 복사해 오는 것이라 여기서 받는다. */
+.db[hidden] { display: none; }
